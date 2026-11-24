@@ -74,6 +74,24 @@ try {
     await page.waitForFunction(() => Number(document.querySelector('[data-reading-progress]').style.getPropertyValue('--reading-progress')) > 0);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await page.waitForFunction(() => !document.querySelector('[data-reading-outline] a[aria-current]'));
+    const nestedName = 'When a cached address is enough';
+    const outline = page.locator(name === 'desktop' ? '.article-aside' : '.mobile-toc');
+    const nestedLink = outline.getByRole('link', { name: nestedName });
+    if (name === 'desktop') {
+      await nestedLink.hover();
+      await page.getByRole('tooltip').getByText(/reuse a DNS answer/).waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('tooltip').waitFor({ state: 'hidden' });
+      await page.locator('.article-aside').getByRole('link', { name: 'What does an API actually do?' }).hover();
+      await page.getByRole('tooltip').getByText(/requests, responses, and the contract/).waitFor();
+    }
+    await page.getByRole('button', { name: 'Collapse all' }).click();
+    await page.getByText(/The browser can reuse a DNS answer/).filter({ visible: true }).waitFor({ state: 'hidden' });
+    await nestedLink.click();
+    await page.waitForURL(/#heading-when-a-cached-address-is-enough$/);
+    await page.locator('.prose').getByText(/The browser can reuse a DNS answer/).waitFor();
+    await page.getByRole('button', { name: 'Expand all' }).click();
+    assert.equal(await page.locator('.section-disclosure:not([open])').count(), 0);
 
     const nextTheme = name === 'tablet' ? 'light' : 'dark';
     await page.getByRole('button', { name: 'Switch to ' + nextTheme + ' theme' }).click();
