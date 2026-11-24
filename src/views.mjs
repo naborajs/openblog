@@ -177,7 +177,7 @@ export function markdown(body) {
   return { bodyHtml, headings };
 }
 
-export function articleView(article, related) {
+export function articleView(article, related, canEdit = false) {
   const { bodyHtml, headings } = markdown(article.body);
   const toc = headings.length ? `<nav class="article-nav" data-reading-outline aria-label="Article outline"><h2>On this page</h2>
     ${headings.map(({ id, label, level }) => `<a class="depth-${level}" href="#${id}">${e(label)}</a>`).join('')}</nav>` : '';
@@ -200,7 +200,7 @@ export function articleView(article, related) {
       </video>${article.transcript ? `<details><summary>Read the transcript</summary><p>${e(article.transcript)}</p></details>` : ''}</section>` : ''}
     ${article.sources?.length ? `<section class="sources"><h2>Sources</h2><ul>${article.sources.map((source) =>
       `<li><a href="${e(source.url)}" rel="noopener noreferrer">${e(source.title)}</a></li>`).join('')}</ul></section>` : ''}
-    <div class="article-tools"><a href="${href(article.slug)}/markdown">Markdown version</a> <button type="button" class="button" data-copy-link>${icon('link')} Copy link</button></div>
+    <div class="article-tools"><a href="${href(article.slug)}/markdown">Markdown version</a> <button type="button" class="button" data-copy-link>${icon('link')} Copy link</button>${canEdit ? ` <a class="button" href="/account${href(article.slug)}">Edit article</a>` : ''}</div>
     <div class="mobile-related">${links}</div>
   </article><aside class="article-aside">${toc}${links}</aside>
   </div>`;
@@ -248,10 +248,10 @@ export function registerPage(message) {
     </form><p class="small-note">See the <a href="/privacy">privacy notice</a> for how accounts are handled.</p></div>`;
 }
 
-export function draftPage(article, member, message, action) {
+export function draftPage(article, member, message, action, published = false) {
   const input = (label, field, attrs = '') => `<label>${label}<input name="${field}" value="${e(article[field])}" ${attrs}></label>`;
   const textarea = (label, field, attrs = '') => `<label>${label}<textarea name="${field}" ${attrs}>${e(article[field])}</textarea></label>`;
-  return `<section class="page-heading entrance"><a href="/account">Your workspace</a><h1>${article.id ? 'Edit draft' : 'Write a draft'}</h1></section>${flash(message)}
+  return `<section class="page-heading entrance"><a href="/account">Your workspace</a><h1>${published ? 'Edit published article' : article.id ? 'Edit draft' : 'Write a draft'}</h1></section>${flash(message)}
   <form method="post" action="${action}" class="fields editor-form">
   ${input('Title', 'title', 'required maxlength="150"')}
   <div class="form-columns"><label>Section<select name="section">${Object.entries(sections).map(([key, item]) => `<option value="${key}" ${article.section === key ? 'selected' : ''}>${item.title}</option>`).join('')}</select></label>
@@ -264,7 +264,7 @@ export function draftPage(article, member, message, action) {
     ${textarea('Video transcript', 'transcript', 'maxlength="15000" rows="3"')}
     ${textarea('Source URLs, one per line', 'source_urls', 'rows="3" maxlength="12000"')}
     ${input('Related article slugs, comma separated', 'related', 'maxlength="800"')}
-  </div></details><div class="form-actions"><button class="button primary">Save draft</button>
-  ${article.id && member.role === 'editor' ? `<button class="button" formaction="/account/drafts/${e(article.id)}/publish">Save and publish</button>` : ''}</div>
+  </div></details><div class="form-actions"><button class="button primary">${published ? 'Save changes' : 'Save draft'}</button>
+  ${!published && article.id && member.role === 'editor' ? `<button class="button" formaction="/account/drafts/${e(article.id)}/publish">Save and publish</button>` : ''}</div>
   </form>`;
 }
