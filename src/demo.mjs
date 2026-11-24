@@ -57,7 +57,7 @@ export const demoArticles = [
     transcript: 'The browser looks up the domain using DNS, opens a secure connection, requests the page, and renders the response. Cached results can shorten the trip.',
     related_slugs: ['what-an-api-actually-does', 'how-knowledge-stays-connected'],
     sources: [{ title: 'MDN explains how the web works', url: 'https://developer.mozilla.org/en-US/docs/Learn_web_development/Getting_started/Web_standards/How_the_web_works' }],
-    body: '## 1. Look up the domain\n\nA browser needs a network address to reach a service. DNS can tell it where to send a request, often with an answer cached by the browser or system.\n\n## 2. Open a connection\n\nFor an HTTPS site, the browser checks the server certificate and uses an encrypted connection.\n\n## 3. Draw the page\n\nThe browser requests HTML and follows references to styles, images, and other resources. It lays out the elements and paints them on the screen.',
+    body: '## 1. Look up the domain\n\nA browser needs a network address to reach a service. DNS can tell it where to send a request, often with an answer cached by the browser or system.\n\n### When a cached address is enough\n\nThe browser can reuse a DNS answer while its time to live has not expired.\n\n## 2. Open a connection\n\nFor an HTTPS site, the browser checks the server certificate and uses an encrypted connection.\n\n## 3. Draw the page\n\nThe browser requests HTML and follows references to styles, images, and other resources. It lays out the elements and paints them on the screen.',
   },
   {
     ...base, slug: 'what-an-api-actually-does', section: 'teaching', topic: 'Technology',
