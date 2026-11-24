@@ -18,21 +18,25 @@ try {
     assert.equal((await page.goto(url)).status(), 200);
     await page.locator('h1').waitFor();
     assert.match(await page.locator('h1').textContent(), /Welcome to OpenBlog/);
-    assert.deepEqual(await page.locator('.top-links a').allTextContents(), ['Blogs', 'News']);
-    assert.deepEqual(await page.locator('.sidebar .side-link span').allTextContents(), ['Explore', 'News', 'Blog', 'Connective AI agent']);
+    const header = page.getByRole('banner');
+    assert.deepEqual(await header.locator('.top-links a').allTextContents(), ['Blogs', 'News', 'Connective AI agent']);
+    assert.equal(await page.locator('.sidebar, #explore-menu').count(), 0);
+    const agent = header.getByRole('link', { name: 'Connective AI agent', exact: true });
+    assert(await agent.isVisible());
+    assert(await agent.evaluate((link) => {
+      const bar = link.closest('.topbar-inner').getBoundingClientRect();
+      return link.getBoundingClientRect().right > bar.left + bar.width * .6;
+    }));
     await page.waitForFunction(() => document.querySelector('.hero-cover img')?.naturalWidth > 0);
     await page.locator('.hero-cover img').evaluate((img) => img.decode());
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     if (screenshots) await page.screenshot({ path: join(screenshots, name + '.png'), animations: 'disabled' });
 
-    if (name === 'mobile') {
-      await page.getByRole('button', { name: 'Open navigation' }).click();
-      await page.locator('.sidebar').getByRole('link', { name: 'Blog', exact: true }).click();
-      await page.waitForURL('**/blogs');
-    } else {
-      await page.locator('.top-links').getByRole('link', { name: 'Blogs', exact: true }).click();
-      await page.waitForURL('**/blogs');
-    }
+    await agent.click();
+    await page.waitForURL('**/api');
+    assert.equal(await agent.getAttribute('aria-current'), 'page');
+    await header.getByRole('link', { name: 'Blogs', exact: true }).click();
+    await page.waitForURL('**/blogs');
     await page.locator('.blog-archive').waitFor();
     assert.equal(await page.locator('h1').textContent(), 'Blogs');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -73,10 +77,11 @@ try {
     console.log(name + ' browser checks passed');
   }
 
-  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, reducedMotion: 'reduce' });
+  const context = await browser.newContext({ viewport: { width: 320, height: 720 }, reducedMotion: 'reduce' });
   const page = await context.newPage();
   await page.goto(url);
   assert.equal(await page.locator('html').evaluate((element) => element.classList.contains('motion')), false);
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await context.close();
   console.log('Reduced-motion checks passed');
 } finally { await browser.close(); }
