@@ -417,9 +417,10 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         if (auth) ctx.user = await auth.user(request, res);
         const canEdit = ctx.user && (await store.membership(ctx.user))?.role === 'editor';
         if (ctx.user) res.setHeader('Cache-Control', 'private, no-store');
+        const [related, candidates] = await Promise.all([store.related(article), store.connectionCandidates(article)]);
         return html({
           title: article.title, description: article.summary, path: '/articles/' + article.slug, active: article.section === 'news' ? 'news' : 'blogs',
-          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, await store.related(article), canEdit),
+          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, related, canEdit, candidates),
         });
       }
       const info = information(path, contactEmail);
