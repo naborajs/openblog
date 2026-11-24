@@ -1,6 +1,7 @@
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
 import { sections } from './demo.mjs';
+import { structureArticle } from './connections.mjs';
 
 export const escape = (value = '') => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -9,7 +10,6 @@ const e = escape;
 const href = (slug) => '/articles/' + encodeURIComponent(slug);
 const date = (value) => value ? new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) : '';
 const json = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
-const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
 const iconPaths = {
   search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
   moon: '<path d="M20 15a8 8 0 0 1-11-11 8 8 0 1 0 11 11Z"/>',
@@ -40,7 +40,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=parallax"><script defer src="/interactions.js?v=search-dialog"></script>
+<link rel="stylesheet" href="/styles.css?v=connections"><script defer src="/interactions.js?v=connections"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -155,32 +155,26 @@ export function listing(title, subtitle, articles, { search, topic, pagination, 
   ${pager(path, { ...(search ? { q: search } : {}), ...(topic ? { topic } : {}) }, pagination)}`;
 }
 
-export function markdown(body) {
-  const headings = [];
-  const used = new Map();
+export function markdown(body, candidates = [], slug) {
   const html = sanitizeHtml(marked.parse(body, { async: false }), {
     allowedTags: [...sanitizeHtml.defaults.allowedTags, 'img', 'figure', 'figcaption'],
-    allowedAttributes: { a: ['href', 'title'], img: ['src', 'alt', 'title', 'loading'], h2: ['id'], h3: ['id'], h4: ['id'], code: ['class'] },
+    allowedAttributes: { a: ['href', 'title'], img: ['src', 'alt', 'title', 'loading'], code: ['class'] },
     allowedSchemes: ['http', 'https', 'mailto'],
     allowProtocolRelative: false,
     transformTags: { img: (name, attribs) => ({ tagName: name, attribs: { ...attribs, loading: 'lazy' } }) },
   });
-  const bodyHtml = html.replace(/<(h[234])(?: id="[^"]*")?>([\s\S]*?)<\/\1>/g, (_, tag, inner) => {
-    const label = inner.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&');
-    const base = slugify(label);
-    const count = (used.get(base) || 0) + 1;
-    used.set(base, count);
-    const id = 'heading-' + base + (count > 1 ? '-' + count : '');
-    headings.push({ id, label, level: Number(tag[1]) });
-    return `<${tag} id="${id}">${inner}</${tag}>`;
-  }).replace(/<h1>/g, '<h2>').replace(/<\/h1>/g, '</h2>');
-  return { bodyHtml, headings };
+  return structureArticle(html, candidates, slug);
 }
 
-export function articleView(article, related, canEdit = false) {
-  const { bodyHtml, headings } = markdown(article.body);
+function outlineList(headings) {
+  return `<ul>${headings.map(({ id, label, summary, children }) => `<li><a href="#${id}"${summary ?
+    ` data-section-preview="${e(summary)}"` : ''}>${e(label)}</a>${children.length ? outlineList(children) : ''}</li>`).join('')}</ul>`;
+}
+
+export function articleView(article, related, canEdit = false, candidates = []) {
+  const { bodyHtml, headings } = markdown(article.body, candidates, article.slug);
   const toc = headings.length ? `<nav class="article-nav" data-reading-outline aria-label="Article outline"><h2>On this page</h2>
-    ${headings.map(({ id, label, level }) => `<a class="depth-${level}" href="#${id}">${e(label)}</a>`).join('')}</nav>` : '';
+    ${outlineList(headings)}</nav>` : '';
   const links = related.length ? `<nav class="article-nav" aria-label="Related articles"><h2>Related reading</h2>
     ${related.map((item) => `<a href="${href(item.slug)}">${e(item.title)}</a>`).join('')}</nav>` : '';
 
@@ -193,6 +187,7 @@ export function articleView(article, related, canEdit = false) {
       <div class="byline"><span>By ${e(article.author_name)}</span></div></header>
     ${article.cover_url ? cover(article, 'article-cover', true) : ''}
     ${toc ? `<details class="mobile-toc"><summary>On this page</summary>${toc}</details>` : ''}
+    ${toc ? '<div class="section-actions" hidden><button type="button" class="button" data-expand-sections>Expand all</button><button type="button" class="button" data-collapse-sections>Collapse all</button></div>' : ''}
     <div class="prose">${bodyHtml}</div>
     ${article.video_url ? `<section class="article-media"><h2>Watch the explanation</h2>
       <video controls playsinline preload="metadata" src="${e(article.video_url)}" ${article.video_captions?.startsWith('https://') ? 'crossorigin="anonymous"' : ''} ${article.cover_url ? `poster="${e(article.cover_url)}"` : ''}>
@@ -203,6 +198,7 @@ export function articleView(article, related, canEdit = false) {
     <div class="article-tools"><a href="${href(article.slug)}/markdown">Markdown version</a> <button type="button" class="button" data-copy-link>${icon('link')} Copy link</button>${canEdit ? ` <a class="button" href="/account${href(article.slug)}">Edit article</a>` : ''}</div>
     <div class="mobile-related">${links}</div>
   </article><aside class="article-aside">${toc}${links}</aside>
+  <div id="reading-preview" class="reading-preview" role="tooltip" hidden><strong></strong><p></p></div>
   </div>`;
 }
 
