@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:04.000
+DNS lookup. The browser finds the website's network address.
+
+00:00:04.000 --> 00:00:08.000
+Secure connection. The browser verifies the site's certificate.
+
+00:00:08.000 --> 00:00:12.000
+Request and render. The browser fetches the page and draws it.
