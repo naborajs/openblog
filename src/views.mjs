@@ -13,11 +13,6 @@ const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').repla
 const iconPaths = {
   search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
   moon: '<path d="M20 15a8 8 0 0 1-11-11 8 8 0 1 0 11 11Z"/>',
-  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
-  home: '<path d="m3 11 9-8 9 8M5 10v10h14V10M10 20v-6h4v6"/>',
-  news: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/>',
-  teaching: '<path d="M12 6C9 3 6 3 3 4v15c3-1 6-1 9 2 3-3 6-3 9-2V4c-3-1-6-1-9 2Zm0 0v15"/>',
-  'find-out': '<circle cx="12" cy="12" r="9"/><path d="m15 9-2 4-4 2 2-4Z"/>',
   link: '<path d="M9 15 15 9m-7 8-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 8a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-1 1" transform="translate(1 0) scale(.9 1)"/>',
 };
 function icon(name) {
@@ -26,11 +21,11 @@ function icon(name) {
 const brand = '<a class="brand" href="/"><img class="brand-mark" src="/mark.svg" width="40" height="40" alt=""><span>OpenBlog</span></a>';
 
 function navigation(active) {
-  return [['blogs', 'Blogs'], ['news', 'News']].map(([key, label]) =>
+  return [['blogs', 'Blogs'], ['news', 'News'], ['api', 'Connective AI agent']].map(([key, label]) =>
     `<a href="/${key}" ${active === key ? 'aria-current="page"' : ''}>${label}</a>`).join('');
 }
 
-export function layout(ctx, { title, description, content, path, image, schema, privatePage = false, active = '', full = false }) {
+export function layout(ctx, { title, description, content, path, image, schema, privatePage = false, active = '' }) {
   const absolute = new URL(path, ctx.origin).href;
   const label = title === 'OpenBlog' ? title : title + ' | OpenBlog';
   const displayImage = image ? new URL(image, ctx.origin).href : new URL('/media/connected.webp', ctx.origin).href;
@@ -50,20 +45,19 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
   <div class="topbar-inner">${brand}
-    <nav class="top-links" aria-label="Main sections">${navigation(active)}</nav>
-    <div class="top-actions">
-      <button class="search-trigger" type="button" data-search-open aria-haspopup="dialog" aria-label="Search articles">${icon('search')}<span>Search articles</span><kbd aria-hidden="true">/</kbd></button>
-      <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme">${icon('moon')}</button>
-      <a class="button account-button" href="/account">${ctx.user ? 'Account' : 'Sign in'}</a>
-      <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-controls="explore-menu" aria-expanded="false" aria-label="Open navigation">${icon('menu')}</button>
+    <div class="header-controls">
+      <nav class="top-links" aria-label="Main sections">${navigation(active)}</nav>
+      <div class="top-actions">
+        <button class="search-trigger" type="button" data-search-open aria-haspopup="dialog" aria-label="Search articles">${icon('search')}<span>Search articles</span><kbd aria-hidden="true">/</kbd></button>
+        <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme">${icon('moon')}</button>
+        <a class="button account-button" href="/account">${ctx.user ? 'Account' : 'Sign in'}</a>
+      </div>
     </div>
   </div>
 </header>
-<div class="frame ${full ? 'frame-full' : ''}">
-  ${sidebar(active, ctx.topics ?? [])}
-  <main id="main" class="main" tabindex="-1">${content}
-    <footer class="footer"><span>OpenBlog</span><div><a href="/about">About</a><a href="/policy">Editorial policy</a><a href="/privacy">Privacy</a><a href="/disclaimer">Disclaimer</a><a href="/contact">Contact</a><a href="/feed.xml">RSS</a></div></footer>
-  </main>
+<div class="shell">
+  <main id="main" class="main" tabindex="-1">${content}</main>
+  <footer class="footer"><span>OpenBlog</span><div><a href="/about">About</a><a href="/policy">Editorial policy</a><a href="/privacy">Privacy</a><a href="/disclaimer">Disclaimer</a><a href="/contact">Contact</a><a href="/feed.xml">RSS</a></div></footer>
 </div>
 <dialog class="search-dialog" aria-labelledby="search-title">
 <form action="/search" class="search-dialog-body"><label id="search-title" for="global-search">Search OpenBlog</label>
@@ -72,18 +66,6 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 <form method="dialog"><button class="search-dismiss" aria-label="Close search">Esc</button></form>
 </dialog>
 </body></html>`;
-}
-
-function sidebar(active, topics) {
-  const links = [
-    ['home', 'Explore', '/', 'home'], ['news', 'News', '/news', 'news'],
-    ['blogs', 'Blog', '/blogs', 'teaching'], ['api', 'Connective AI agent', '/api', 'link'],
-  ];
-  return `<aside class="sidebar" id="explore-menu"><nav aria-label="Explore OpenBlog">
-  <div class="side-heading">LIBRARY</div>
-  ${links.map(([key, title, url, symbol]) => `<a class="side-link" href="${url}" ${key === active ? 'aria-current="page"' : ''}>${icon(symbol)}<span>${e(title)}</span></a>`).join('')}
-  ${topics.length ? `<div class="side-heading topic-heading">TOPICS</div><div class="side-topics">${topics.map((topic) => `<a href="/search?topic=${encodeURIComponent(topic)}"><span aria-hidden="true">#</span>${e(topic)}</a>`).join('')}</div>` : ''}
-  </nav></aside>`;
 }
 
 function cover(article, className = '', eager = false) {
