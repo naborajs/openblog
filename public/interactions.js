@@ -43,27 +43,6 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-const menuButton = document.querySelector('[data-menu-toggle]');
-const menu = document.querySelector('#explore-menu');
-if (!menu) menuButton?.remove();
-function toggleMenu(open) {
-  menu?.classList.toggle('is-open', open);
-  menuButton?.setAttribute('aria-expanded', String(open));
-  menuButton?.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
-}
-menuButton?.addEventListener('click', () => toggleMenu(menuButton.getAttribute('aria-expanded') !== 'true'));
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && menuButton?.getAttribute('aria-expanded') === 'true') {
-    toggleMenu(false);
-    menuButton.focus();
-  }
-});
-document.addEventListener('click', (event) => {
-  if (menuButton?.getAttribute('aria-expanded') === 'true' && !menu?.contains(event.target) && !menuButton.contains(event.target)) {
-    toggleMenu(false);
-  }
-});
-
 if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
