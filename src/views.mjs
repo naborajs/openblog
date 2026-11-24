@@ -40,7 +40,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=reading"><script defer src="/interactions.js?v=reading"></script>
+<link rel="stylesheet" href="/styles.css?v=reading"><script defer src="/interactions.js?v=search-dialog"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -61,7 +61,7 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
   <main id="main" class="main" tabindex="-1">${content}</main>
   <footer class="footer"><span>OpenBlog</span><div><a href="/about">About</a><a href="/policy">Editorial policy</a><a href="/privacy">Privacy</a><a href="/disclaimer">Disclaimer</a><a href="/contact">Contact</a><a href="/feed.xml">RSS</a></div></footer>
 </div>
-<dialog class="search-dialog" aria-labelledby="search-title">
+<dialog class="search-dialog" closedby="any" aria-labelledby="search-title">
 <form action="/search" class="search-dialog-body"><label id="search-title" for="global-search">Search OpenBlog</label>
 <div class="search-dialog-row">${icon('search')}<input id="global-search" type="search" name="q" placeholder="Search articles or topics…" maxlength="100" required>
 <button class="button primary" type="submit">Search</button></div></form>
