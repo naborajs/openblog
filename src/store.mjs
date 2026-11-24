@@ -47,11 +47,11 @@ export function createStore(databaseUrl, existingPool) {
   return {
     demo: !pool,
     async close() { await pool?.end(); },
-    async articles({ section = '', topic = '', search = '', limit = 24, offset = 0 } = {}) {
+    async articles({ section = '', topic = '', search = '', limit = 24, offset = 0, blogOnly = false } = {}) {
       if (!pool) {
         const query = search.toLowerCase();
         return demoArticles.filter((article) =>
-          (!section || article.section === section) && (!topic || article.topic === topic)
+          (!section || article.section === section) && (!topic || article.topic === topic) && (!blogOnly || article.section !== 'news')
           && (!query || [article.title, article.summary, article.topic].some((value) => value.toLowerCase().includes(query))))
           .slice(offset, offset + limit);
       }
@@ -60,7 +60,8 @@ export function createStore(databaseUrl, existingPool) {
          from blog.posts where status = 'published'
            and ($1 = '' or section = $1) and ($2 = '' or topic = $2)
            and ($3 = '' or strpos(lower(concat_ws(' ', title, summary, topic)), lower($3)) > 0)
-         order by published_at desc, slug limit $4 offset $5`, [section, topic, search, limit, offset]);
+           and (not $6::boolean or section <> 'news')
+         order by published_at desc, slug limit $4 offset $5`, [section, topic, search, limit, offset, blogOnly]);
       return result.rows;
     },
     async article(slug) {
