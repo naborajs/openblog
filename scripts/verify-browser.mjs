@@ -27,6 +27,8 @@ try {
       const bar = link.closest('.topbar-inner').getBoundingClientRect();
       return link.getBoundingClientRect().right > bar.left + bar.width * .6;
     }));
+    await page.waitForFunction(() => document.querySelector('.explore-title-art img')?.naturalWidth > 0);
+    assert.equal(await page.locator('.explore-title-art img').getAttribute('alt'), '');
     await page.waitForFunction(() => document.querySelector('.hero-cover img')?.naturalWidth > 0);
     await page.locator('.hero-cover img').evaluate((img) => img.decode());
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -58,13 +60,20 @@ try {
     await page.locator('video').waitFor();
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.equal(await page.locator('track').getAttribute('kind'), 'captions');
+    const section = '1. Look up the domain';
+    let sectionLink;
     if (name === 'desktop') {
-      await page.locator('.article-aside').getByRole('link', { name: '1. Look up the domain' }).click();
-      await page.waitForURL(/#heading-1-look-up-the-domain$/);
+      sectionLink = page.locator('.article-aside').getByRole('link', { name: section });
     } else {
       await page.getByText('On this page', { exact: true }).filter({ visible: true }).click();
-      await page.locator('.mobile-toc a').first().waitFor();
+      sectionLink = page.locator('.mobile-toc').getByRole('link', { name: section });
     }
+    await sectionLink.click();
+    await page.waitForURL(/#heading-1-look-up-the-domain$/);
+    await page.waitForFunction(() => document.querySelectorAll('[data-reading-outline] a[aria-current="location"][href="#heading-1-look-up-the-domain"]').length === 2);
+    await page.waitForFunction(() => Number(document.querySelector('[data-reading-progress]').style.getPropertyValue('--reading-progress')) > 0);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    await page.waitForFunction(() => !document.querySelector('[data-reading-outline] a[aria-current]'));
 
     const nextTheme = name === 'tablet' ? 'light' : 'dark';
     await page.getByRole('button', { name: 'Switch to ' + nextTheme + ' theme' }).click();
