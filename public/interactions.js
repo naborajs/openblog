@@ -68,6 +68,34 @@ const readingProgress = document.querySelector('[data-reading-progress]');
 const article = document.querySelector('.article');
 if (readingProgress && article) {
   const topbar = readingProgress.closest('.topbar');
+  const disclosures = [...article.querySelectorAll('.section-disclosure')];
+  const sectionActions = article.querySelector('.section-actions');
+  if (sectionActions) {
+    sectionActions.hidden = false;
+    sectionActions.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (button) {
+        for (const disclosure of disclosures) disclosure.open = button.hasAttribute('data-expand-sections');
+      }
+    });
+  }
+  function openHeading(hash) {
+    const heading = document.getElementById(hash.slice(1));
+    if (!heading?.closest('.reading-section')) return;
+    for (let item = heading.closest('.section-disclosure'); item; item = item.parentElement.closest('.section-disclosure')) {
+      item.open = true;
+    }
+    const ownSection = heading.nextElementSibling;
+    if (ownSection?.matches('.section-disclosure')) ownSection.open = true;
+    return heading;
+  }
+  article.closest('.article-layout').addEventListener('click', (event) => {
+    const link = event.target.closest('[data-reading-outline] a');
+    if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) openHeading(link.hash);
+  });
+  window.addEventListener('hashchange', () => openHeading(location.hash)?.scrollIntoView());
+  openHeading(location.hash);
+
   const outlineLinks = new Map();
   for (const link of document.querySelectorAll('[data-reading-outline] a')) {
     const heading = document.getElementById(link.hash.slice(1));
@@ -86,6 +114,7 @@ if (readingProgress && article) {
     const progress = readingDistance > 0 ? (headerBottom - articleBounds.top) / readingDistance : 0;
     let nextHeading;
     for (const heading of outlineLinks.keys()) {
+      if (!heading.getClientRects().length) continue;
       if (heading.getBoundingClientRect().top > headerBottom + 24) break;
       nextHeading = heading;
     }
@@ -106,6 +135,96 @@ if (readingProgress && article) {
   readingObserver.observe(article);
   readingObserver.observe(topbar);
   scheduleReadingUpdate();
+}
+
+const preview = document.getElementById('reading-preview');
+if (preview) {
+  const layout = preview.closest('.article-layout');
+  const title = preview.querySelector('strong');
+  const excerpt = preview.querySelector('p');
+  let trigger;
+  let showTimer;
+  let hideTimer;
+  let pending;
+
+  function hidePreview() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    pending?.abort();
+    trigger?.removeAttribute('aria-describedby');
+    trigger = undefined;
+    preview.hidden = true;
+  }
+
+  function positionPreview(link) {
+    const anchor = link.getBoundingClientRect();
+    const { width, height } = preview.getBoundingClientRect();
+    const edge = 12;
+    const x = Math.max(edge, Math.min(anchor.left, innerWidth - width - edge));
+    const below = anchor.bottom + 6;
+    const y = below + height <= innerHeight - edge ? below : Math.max(edge, anchor.top - height - 6);
+    preview.style.left = x + 'px';
+    preview.style.top = y + 'px';
+  }
+
+  function openPreview(link) {
+    clearTimeout(hideTimer);
+    if (link === trigger) return;
+    hidePreview();
+    const sectionSummary = link.dataset.sectionPreview;
+    const slug = /^\/articles\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:[?#].*)?$/.exec(link.getAttribute('href'))?.[1];
+    if (!sectionSummary && (!slug || slug.length > 120)) return;
+    trigger = link;
+    showTimer = setTimeout(async () => {
+      let heading = link.textContent.trim();
+      let summary = sectionSummary;
+      if (!summary) {
+        pending = new AbortController();
+        try {
+          const response = await fetch('/api/v1/articles/' + slug, { signal: pending.signal, credentials: 'omit', redirect: 'error' });
+          if (!response.ok) return;
+          const data = await response.json();
+          heading = data.title;
+          summary = data.summary;
+        } catch {
+          return;
+        }
+      }
+      if (trigger !== link || typeof heading !== 'string' || typeof summary !== 'string' || !summary.trim()) return;
+      title.textContent = heading.slice(0, 150);
+      excerpt.textContent = summary.slice(0, 320);
+      preview.hidden = false;
+      positionPreview(link);
+      link.setAttribute('aria-describedby', preview.id);
+    }, 220);
+  }
+
+  function scheduleHide(event) {
+    if (preview.contains(event.relatedTarget) || trigger?.contains(event.relatedTarget)) return;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hidePreview, 180);
+  }
+
+  layout.addEventListener('pointerover', (event) => {
+    if (event.pointerType === 'touch') return;
+    const link = event.target.closest('a');
+    if (link) openPreview(link);
+  });
+  layout.addEventListener('pointerout', (event) => {
+    if (trigger?.contains(event.target) || preview.contains(event.target)) scheduleHide(event);
+  });
+  preview.addEventListener('pointerenter', () => clearTimeout(hideTimer));
+  layout.addEventListener('focusin', (event) => {
+    if (event.target.matches('a:focus-visible')) openPreview(event.target);
+  });
+  layout.addEventListener('focusout', (event) => {
+    if (event.target === trigger) scheduleHide(event);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hidePreview();
+  });
+  window.addEventListener('scroll', hidePreview, { passive: true, capture: true });
+  window.addEventListener('resize', hidePreview);
 }
 
 for (const button of document.querySelectorAll('[data-copy-link], [data-copy-key]')) {
