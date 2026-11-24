@@ -81,6 +81,22 @@ export function createStore(databaseUrl, existingPool) {
          order by (slug = any($2::text[])) desc, published_at desc limit 5`, [article.slug, article.related_slugs ?? [], article.topic]);
       return result.rows;
     },
+    async connectionCandidates(article) {
+      if (!pool) return demoArticles.filter(({ slug, section }) => slug !== article.slug && section !== 'news');
+      const result = await pool.query(
+        `select slug, title
+         from blog.posts
+         cross join lateral (
+           select btrim(regexp_replace(regexp_replace(btrim(regexp_replace(title, '(:|[[:space:]]+[–—][[:space:]]+).*$', '')),
+             '^(what (is|are)|understanding|introduction to)[[:space:]]+', '', 'i'), '[?!.]+$', '')) as term
+         ) candidate
+         where status = 'published' and section <> 'news' and slug <> $1
+           and char_length(candidate.term) between 3 and 48
+           and strpos(lower($2), lower(candidate.term)) > 0
+         order by char_length(candidate.term) desc, lower(candidate.term), slug limit 200`,
+        [article.slug, article.body]);
+      return result.rows;
+    },
     async sitemap() {
       if (!pool) return demoArticles;
       return (await pool.query("select slug, updated_at from blog.posts where status = 'published' order by slug limit 49990")).rows;
