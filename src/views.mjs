@@ -23,11 +23,11 @@ const iconPaths = {
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="icon">${iconPaths[name]}</svg>`;
 }
-const brand = '<a class="brand" href="/"><span class="brand-mark" aria-hidden="true">✳</span><span>Open<span>Blog</span></span></a>';
+const brand = '<a class="brand" href="/"><img class="brand-mark" src="/mark.svg" width="40" height="40" alt=""><span>OpenBlog</span></a>';
 
 function navigation(active) {
-  return Object.entries(sections).map(([key, section]) =>
-    `<a href="/${key}" ${active === key ? 'aria-current="page"' : ''}>${e(section.title)}</a>`).join('');
+  return [['blogs', 'Blogs'], ['news', 'News']].map(([key, label]) =>
+    `<a href="/${key}" ${active === key ? 'aria-current="page"' : ''}>${label}</a>`).join('');
 }
 
 export function layout(ctx, { title, description, content, path, image, schema, privatePage = false, active = '', full = false }) {
@@ -43,7 +43,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:description" content="${e(description)}"><meta property="og:url" content="${e(absolute)}">
 <meta property="og:type" content="${schema?.['@type'] === 'Article' || schema?.['@type'] === 'NewsArticle' ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js"></script>
+<link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
 <link rel="stylesheet" href="/styles.css"><script defer src="/interactions.js"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
@@ -62,7 +62,7 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 <div class="frame ${full ? 'frame-full' : ''}">
   ${sidebar(active, ctx.topics ?? [])}
   <main id="main" class="main" tabindex="-1">${content}
-    <footer class="footer"><span>OpenBlog</span><div><a href="/about">About</a><a href="/policy">Editorial policy</a><a href="/privacy">Privacy</a><a href="/api">Agent API</a><a href="/feed.xml">RSS</a></div></footer>
+    <footer class="footer"><span>OpenBlog</span><div><a href="/about">About</a><a href="/policy">Editorial policy</a><a href="/privacy">Privacy</a><a href="/disclaimer">Disclaimer</a><a href="/contact">Contact</a><a href="/feed.xml">RSS</a></div></footer>
   </main>
 </div>
 <dialog class="search-dialog" aria-labelledby="search-title">
@@ -75,13 +75,14 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 }
 
 function sidebar(active, topics) {
-  const links = [['home', 'Explore', '/'], ...Object.keys(sections).map((key) => [key, sections[key].title, '/' + key])];
+  const links = [
+    ['home', 'Explore', '/', 'home'], ['news', 'News', '/news', 'news'],
+    ['blogs', 'Blog', '/blogs', 'teaching'], ['api', 'Connective AI agent', '/api', 'link'],
+  ];
   return `<aside class="sidebar" id="explore-menu"><nav aria-label="Explore OpenBlog">
-  <a class="mobile-search side-link" href="/search">${icon('search')} Search</a>
   <div class="side-heading">LIBRARY</div>
-  ${links.map(([key, title, url]) => `<a class="side-link" href="${url}" ${key === active ? 'aria-current="page"' : ''}>${icon(key)}<span>${e(title)}</span></a>`).join('')}
+  ${links.map(([key, title, url, symbol]) => `<a class="side-link" href="${url}" ${key === active ? 'aria-current="page"' : ''}>${icon(symbol)}<span>${e(title)}</span></a>`).join('')}
   ${topics.length ? `<div class="side-heading topic-heading">TOPICS</div><div class="side-topics">${topics.map((topic) => `<a href="/search?topic=${encodeURIComponent(topic)}"><span aria-hidden="true">#</span>${e(topic)}</a>`).join('')}</div>` : ''}
-  <div class="side-resources"><a href="/about">About OpenBlog</a><a href="/api">Agent API</a></div>
   </nav></aside>`;
 }
 
@@ -110,16 +111,51 @@ function pager(base, params, pagination) {
     ${pagination.more ? link(pagination.page + 1, 'Next page') : ''}</nav>`;
 }
 
-export function home(articles) {
-  const [featured, ...rest] = articles;
-  return `<section class="home-intro entrance"><h1>Explore what matters<span>.</span></h1>
-    <p>Follow the news, learn something new, and see how ideas connect.</p></section>
-  ${featured ? `<article class="hero entrance"><a href="${href(featured.slug)}" class="hero-link">
-    ${cover(featured, 'hero-cover', true)}<div class="hero-copy">${sectionLabel(featured)}
-    <h2>${e(featured.title)}</h2><p>${e(featured.summary)}</p><span class="hero-cta">Read the article</span></div></a></article>`
-    : '<div class="empty"><h2>Articles are on the way</h2><p>Published stories will appear here.</p></div>'}
-  ${rest.length ? `<section class="story-section"><div class="section-head"><h2>Latest articles</h2><a href="/search">Browse all</a></div>
-    <div class="story-grid">${rest.map(card).join('')}</div></section>` : ''}`;
+const time = (value) => `<time datetime="${new Date(value).toISOString()}">${date(value)}</time>`;
+const articleLinkList = (items) => `<ul class="article-link-list">${items.map((article) => `<li><a href="${href(article.slug)}">${e(article.title)}</a><span>${e(article.topic)}</span></li>`).join('')}</ul>`;
+const emptyArticles = '<div class="empty"><h2>Articles are on the way</h2><p>Published stories will appear here.</p></div>';
+
+export function home(blogs, news) {
+  const [featured, ...otherBlogs] = blogs;
+  return `<header class="explore-title entrance"><h1>Welcome to OpenBlog</h1>
+    <p>Explore a connected library of articles, guides, and news.</p></header>
+    <div class="explore-grid">
+      <section class="explore-feature entrance"><div class="section-head"><h2>Featured article</h2><a href="/blogs">Browse blogs</a></div>
+        ${featured ? `<article class="explore-story"><a href="${href(featured.slug)}">
+          ${cover(featured, 'hero-cover', true)}
+          <div><h3>${e(featured.title)}</h3><p>${e(featured.summary)}</p><span class="read-label">Read article</span></div>
+        </a></article>${articleLinkList(otherBlogs)}` : emptyArticles}
+      </section>
+      <section class="explore-news entrance"><div class="section-head"><h2>In the news</h2><a href="/news">All news</a></div>
+        ${news.length ? articleLinkList(news) : '<p class="empty">News stories will appear here.</p>'}
+      </section>
+    </div>`;
+}
+
+export function blogIndex(articles, pagination) {
+  return `<header class="blog-intro entrance"><h1>Blogs</h1><p>In-depth articles, practical guides, and ideas worth exploring.</p></header>
+    ${articles.length ? `<section class="blog-archive" aria-label="Blog posts">
+      ${articles.map((article) => `<article class="blog-entry reveal"><a href="${href(article.slug)}" class="blog-entry-link">
+        <div class="blog-entry-text"><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+          <h2>${e(article.title)}</h2><p>${e(article.summary)}</p><span class="read-label">Read article</span></div>
+        ${article.cover_url ? cover(article, 'blog-entry-cover') : ''}
+      </a></article>`).join('')}
+    </section>` : emptyArticles}${pager('/blogs', {}, pagination)}`;
+}
+
+export function newsIndex(articles, pagination) {
+  const [lead, ...headlines] = articles;
+  return `<header class="news-intro entrance"><h1>News</h1><p>Reporting and context on what’s changing.</p></header>
+    ${lead ? `<div class="news-front entrance"><article class="news-feature"><a href="${href(lead.slug)}">
+      ${cover(lead, 'news-cover', true)}
+      <div class="news-feature-text"><div class="entry-meta">${time(lead.published_at)}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
+      <h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p></div>
+    </a></article>
+    ${headlines.length ? `<section class="news-headlines" aria-label="More news">
+      ${headlines.map((article) => `<article class="news-brief reveal"><a href="${href(article.slug)}"><h3>${e(article.title)}</h3>
+        <p>${e(article.summary)}</p><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+      </a></article>`).join('')}
+    </section>` : ''}</div>` : emptyArticles}${pager('/news', {}, pagination)}`;
 }
 
 export function listing(title, subtitle, articles, { search, topic, pagination, path } = {}) {
@@ -161,11 +197,13 @@ export function articleView(article, related) {
   const links = related.length ? `<nav class="article-nav" aria-label="Related articles"><h2>Related reading</h2>
     ${related.map((item) => `<a href="${href(item.slug)}">${e(item.title)}</a>`).join('')}</nav>` : '';
 
-  return `<div class="article-layout">
+  const isNews = article.section === 'news';
+  return `<div class="article-layout ${isNews ? 'news-reading' : 'blog-reading'}">
   <article class="article entrance">
-    <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Explore</a><span>/</span><a href="/${e(article.section)}">${e(sections[article.section].title)}</a></nav>
-    <header class="article-header"><h1>${e(article.title)}</h1><p>${e(article.summary)}</p>
-      <div class="byline"><span class="avatar" aria-hidden="true">${e(article.author_name[0]?.toUpperCase())}</span><span>${e(article.author_name)}</span><time datetime="${new Date(article.published_at).toISOString()}">${date(article.published_at)}</time></div></header>
+    <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Explore</a><span>/</span><a href="/${isNews ? 'news' : 'blogs'}">${isNews ? 'News' : 'Blogs'}</a></nav>
+    <header class="article-header"><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+      <h1>${e(article.title)}</h1><p>${e(article.summary)}</p>
+      <div class="byline"><span>By ${e(article.author_name)}</span></div></header>
     ${article.cover_url ? cover(article, 'article-cover', true) : ''}
     ${toc ? `<details class="mobile-toc"><summary>On this page</summary>${toc}</details>` : ''}
     <div class="prose">${bodyHtml}</div>
