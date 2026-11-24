@@ -48,10 +48,17 @@ test('demo serves pages, media, and the public API without writing data', async 
   const server = createApp({ store: createStore(), auth: null, origin: 'http://localhost:3100' });
   const base = await listen(server);
   try {
-    for (const path of ['/', '/news', '/teaching', '/find-out', '/about', '/privacy', '/policy', '/api', '/account', '/feed.xml', '/sitemap.xml']) {
+    for (const path of ['/', '/blogs', '/news', '/teaching', '/find-out', '/about', '/privacy', '/policy', '/disclaimer', '/contact', '/api', '/account', '/feed.xml', '/sitemap.xml']) {
       const response = await fetch(base + path);
       assert.equal(response.status, 200, path);
     }
+    const blogs = await (await fetch(base + '/blogs')).text();
+    const news = await (await fetch(base + '/news')).text();
+    assert.match(blogs, /class="blog-archive"/);
+    assert.doesNotMatch(blogs, /How to read a technology release/);
+    assert.match(news, /class="news-headlines"/);
+    assert.doesNotMatch(news, /What happens when you open a website/);
+    assert.match((await fetch(base + '/mark.svg')).headers.get('content-type'), /image\/svg/);
     const article = await (await fetch(base + '/articles/what-happens-when-you-open-a-website')).text();
     assert.match(article, /VideoObject/);
     assert.match(article, /Related reading/);
@@ -155,6 +162,8 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal(detail.title, sample.title);
     assert.equal(detail.author_name, 'Alice');
     assert.equal(detail.author_id, undefined);
+    assert.match(await (await fetch(base + '/blogs')).text(), /How publishing works/);
+    assert.doesNotMatch(await (await fetch(base + '/news')).text(), /How publishing works/);
     assert.match(await (await fetch(base + '/robots.txt')).text(), /User-agent: OAI-SearchBot\nAllow: \//);
     assert.match(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(draft.slug));
     const account = await (await fetch(base + '/account', { headers: { Cookie: sessionCookie(alice.email) } })).text();
