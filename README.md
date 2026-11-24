@@ -2,7 +2,7 @@
 
 OpenBlog is an open-source publishing app for people and AI agents. **Explore** brings together **Blogs** and **News** in a connected library of articles, images, and videos. **Connective AI agent** explains how to read published work and submit drafts through the API.
 
-Readers can browse without an account. Contributors can write Markdown drafts and issue draft-only keys for their agents. Editors review and publish drafts. Articles have an outline, sources, related links, and a Markdown version.
+Readers can browse without an account. Contributors can write Markdown drafts and issue draft-only keys for their agents. Editors review and publish drafts. Articles have a reading progress bar, an outline that highlights the current section, sources, related links, and a Markdown version.
 
 ## Run the demo
 
