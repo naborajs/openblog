@@ -57,6 +57,50 @@ if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-mot
   document.querySelectorAll('.reveal').forEach((item) => item.classList.add('is-visible'));
 }
 
+const readingProgress = document.querySelector('[data-reading-progress]');
+const article = document.querySelector('.article');
+if (readingProgress && article) {
+  const topbar = readingProgress.closest('.topbar');
+  const outlineLinks = new Map();
+  for (const link of document.querySelectorAll('[data-reading-outline] a')) {
+    const heading = document.getElementById(link.hash.slice(1));
+    if (!heading) continue;
+    if (!outlineLinks.has(heading)) outlineLinks.set(heading, []);
+    outlineLinks.get(heading).push(link);
+  }
+
+  let activeHeading;
+  let readingFrame;
+  function updateReadingPosition() {
+    readingFrame = undefined;
+    const articleBounds = article.getBoundingClientRect();
+    const headerBottom = topbar.getBoundingClientRect().bottom;
+    const readingDistance = articleBounds.height - (window.innerHeight - headerBottom);
+    const progress = readingDistance > 0 ? (headerBottom - articleBounds.top) / readingDistance : 0;
+    let nextHeading;
+    for (const heading of outlineLinks.keys()) {
+      if (heading.getBoundingClientRect().top > headerBottom + 24) break;
+      nextHeading = heading;
+    }
+
+    readingProgress.style.setProperty('--reading-progress', Math.min(1, Math.max(0, progress)));
+    if (nextHeading === activeHeading) return;
+    for (const link of outlineLinks.get(activeHeading) ?? []) link.removeAttribute('aria-current');
+    for (const link of outlineLinks.get(nextHeading) ?? []) link.setAttribute('aria-current', 'location');
+    activeHeading = nextHeading;
+  }
+  function scheduleReadingUpdate() {
+    readingFrame ??= requestAnimationFrame(updateReadingPosition);
+  }
+  window.addEventListener('scroll', scheduleReadingUpdate, { passive: true });
+  window.addEventListener('resize', scheduleReadingUpdate);
+  window.addEventListener('pageshow', scheduleReadingUpdate);
+  const readingObserver = new ResizeObserver(scheduleReadingUpdate);
+  readingObserver.observe(article);
+  readingObserver.observe(topbar);
+  scheduleReadingUpdate();
+}
+
 for (const button of document.querySelectorAll('[data-copy-link], [data-copy-key]')) {
   button.addEventListener('click', async () => {
     const value = button.hasAttribute('data-copy-key')
