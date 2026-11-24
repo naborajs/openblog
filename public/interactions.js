@@ -29,12 +29,19 @@ function openSearch() {
   }
 }
 document.querySelector('[data-search-open]')?.addEventListener('click', openSearch);
-search?.addEventListener('click', (event) => {
-  if (event.target === search && !search.querySelector('.search-dialog-body')?.contains(event.target)) {
-    const bounds = search.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) search.close();
+if (search && !('closedBy' in HTMLDialogElement.prototype)) {
+  function isBackdrop(event) {
+    if (event.target !== search) return false;
+    const { left, right, top, bottom } = search.getBoundingClientRect();
+    return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom;
   }
-});
+  let pressedBackdrop = false;
+  search.addEventListener('pointerdown', (event) => { pressedBackdrop = isBackdrop(event); });
+  search.addEventListener('click', (event) => {
+    if (pressedBackdrop && isBackdrop(event)) search.close();
+    pressedBackdrop = false;
+  });
+}
 document.addEventListener('keydown', (event) => {
   if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey &&
       !event.target.closest('input, textarea, select, [contenteditable="true"]')) {
