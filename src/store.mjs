@@ -104,6 +104,18 @@ export function createStore(databaseUrl, existingPool) {
       return withIdentity(user, async (client) => (await client.query(
         "select * from blog.posts where id = $1 and status = 'draft'", [id])).rows[0]);
     },
+    async publishedForEditor(user, slug) {
+      return withIdentity(user, async (client) => (await client.query(
+        "select * from blog.posts where slug = $1 and status = 'published' and blog.is_editor()", [slug])).rows[0]);
+    },
+    async updatePublished(user, slug, article) {
+      const fields = articleFields.map((field, index) => field + ' = $' + (index + 2));
+      const values = articleFields.map((field) => field === 'sources' ? JSON.stringify(article[field]) : article[field]);
+      return withIdentity(user, async (client) => (await client.query(
+        `update blog.posts set ${fields.join(', ')}, updated_at = now()
+          where slug = $1 and status = 'published' and blog.is_editor() returning slug`,
+        [slug, ...values])).rows[0]);
+    },
     async saveDraft(user, member, article, id, publish = false) {
       return withIdentity(user, async (client) => {
         if (!id) return createDraft(client, { id: user.id, name: member.name }, article);
