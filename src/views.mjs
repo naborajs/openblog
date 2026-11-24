@@ -29,6 +29,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
   const absolute = new URL(path, ctx.origin).href;
   const label = title === 'OpenBlog' ? title : title + ' | OpenBlog';
   const displayImage = image ? new URL(image, ctx.origin).href : new URL('/media/connected.webp', ctx.origin).href;
+  const isArticle = schema?.['@type'] === 'Article' || schema?.['@type'] === 'NewsArticle';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>${e(label)}</title><meta name="description" content="${e(description)}">
@@ -36,10 +37,10 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <link rel="canonical" href="${e(absolute)}"><link rel="alternate" type="application/rss+xml" title="OpenBlog" href="/feed.xml">
 <meta property="og:site_name" content="OpenBlog"><meta property="og:title" content="${e(title)}">
 <meta property="og:description" content="${e(description)}"><meta property="og:url" content="${e(absolute)}">
-<meta property="og:type" content="${schema?.['@type'] === 'Article' || schema?.['@type'] === 'NewsArticle' ? 'article' : 'website'}">
+<meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css"><script defer src="/interactions.js"></script>
+<link rel="stylesheet" href="/styles.css?v=reading"><script defer src="/interactions.js?v=reading"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -54,6 +55,7 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
       </div>
     </div>
   </div>
+  ${isArticle ? '<div class="reading-progress" data-reading-progress aria-hidden="true"></div>' : ''}
 </header>
 <div class="shell">
   <main id="main" class="main" tabindex="-1">${content}</main>
@@ -99,8 +101,11 @@ const emptyArticles = '<div class="empty"><h2>Articles are on the way</h2><p>Pub
 
 export function home(blogs, news) {
   const [featured, ...otherBlogs] = blogs;
-  return `<header class="explore-title entrance"><h1>Welcome to OpenBlog</h1>
-    <p>Explore a connected library of articles, guides, and news.</p></header>
+  return `<header class="explore-title">
+    <div class="explore-title-copy entrance"><h1>Welcome to OpenBlog</h1>
+      <p>Explore a connected library of articles, guides, and news.</p></div>
+    <div class="explore-title-art"><img src="/media/rings.webp" width="640" height="400" alt="" fetchpriority="high" decoding="async"></div>
+  </header>
     <div class="explore-grid">
       <section class="explore-feature entrance"><div class="section-head"><h2>Featured article</h2><a href="/blogs">Browse blogs</a></div>
         ${featured ? `<article class="explore-story"><a href="${href(featured.slug)}">
@@ -174,7 +179,7 @@ export function markdown(body) {
 
 export function articleView(article, related) {
   const { bodyHtml, headings } = markdown(article.body);
-  const toc = headings.length ? `<nav class="article-nav" aria-label="Article outline"><h2>On this page</h2>
+  const toc = headings.length ? `<nav class="article-nav" data-reading-outline aria-label="Article outline"><h2>On this page</h2>
     ${headings.map(({ id, label, level }) => `<a class="depth-${level}" href="#${id}">${e(label)}</a>`).join('')}</nav>` : '';
   const links = related.length ? `<nav class="article-nav" aria-label="Related articles"><h2>Related reading</h2>
     ${related.map((item) => `<a href="${href(item.slug)}">${e(item.title)}</a>`).join('')}</nav>` : '';
