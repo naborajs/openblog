@@ -42,6 +42,15 @@ test('article validation and HTML rendering reject unsafe input', () => {
   const html = markdown('## First answer\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n## First answer');
   assert.deepEqual(html.headings.map(({ id }) => id), ['heading-first-answer', 'heading-first-answer-2']);
   assert.doesNotMatch(html.bodyHtml, /script|javascript|alert/);
+  const connected = markdown('## Parent\n\nSupabase and SupabaseX.\n\n### Child\n\nSupabase again. `TLS` and [TLS](https://example.com).\n\n#### Grandchild\n\nEscaped <em>summary</em>.', [
+    { slug: 'supabase', title: 'What is Supabase?' },
+    { slug: 'tls-one', title: 'TLS' },
+    { slug: 'tls-two', title: 'What is TLS?' },
+    { slug: 'self', title: 'Grandchild' },
+  ], 'self');
+  assert.equal(connected.headings[0].children[0].children[0].summary, 'Escaped summary.');
+  assert.equal((connected.bodyHtml.match(/href="\/articles\/supabase"/g) ?? []).length, 1);
+  assert.doesNotMatch(connected.bodyHtml, /\/articles\/(?:tls-|self)/);
 });
 
 test('demo serves pages, media, and the public API without writing data', async () => {
@@ -155,7 +164,8 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal((await fetch(base + '/articles/' + draft.slug)).status, 404);
     assert.equal((await fetch(base + '/account/drafts/' + draft.id, { headers: { Cookie: sessionCookie(extra.email) } })).status, 404);
     assert.equal((await form('/account/drafts/' + draft.id + '/publish', sample, alice)).status, 403);
-    const published = await form('/account/drafts/' + draft.id + '/publish', sample, ed);
+    const sourceArticle = { ...sample, body: sample.body + '\n\nSupabase handles data storage.' };
+    const published = await form('/account/drafts/' + draft.id + '/publish', sourceArticle, ed);
     assert.equal(published.status, 303);
     assert.equal(published.headers.get('location'), '/articles/' + draft.slug);
     const detail = await (await fetch(base + '/api/v1/articles/' + draft.slug)).json();
@@ -167,6 +177,17 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.match(await (await fetch(base + '/robots.txt')).text(), /User-agent: OAI-SearchBot\nAllow: \//);
     assert.match(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(draft.slug));
     const publicPath = '/articles/' + draft.slug;
+    const topic = { ...sample, title: 'What is Supabase?' };
+    const targetDraft = await form('/account/drafts/new', topic, alice);
+    const targetPath = targetDraft.headers.get('location');
+    assert.match(targetPath, /^\/account\/drafts\//);
+    assert.doesNotMatch(await (await fetch(base + publicPath)).text(), /class="topic-link"/);
+    const targetPublished = await form(targetPath + '/publish', topic, ed);
+    const targetArticle = targetPublished.headers.get('location');
+    assert.match(targetArticle, /^\/articles\//);
+    const linkedOlderArticle = await (await fetch(base + publicPath)).text();
+    assert.ok(linkedOlderArticle.includes(`href="${targetArticle}" class="topic-link">Supabase</a>`));
+    assert.equal((await (await fetch(base + '/api/v1' + publicPath)).json()).body, sourceArticle.body);
     const editPath = '/account' + publicPath;
     const editorHeaders = { Cookie: sessionCookie(ed.email) };
     assert.doesNotMatch(await (await fetch(base + publicPath)).text(), /Edit article/);
