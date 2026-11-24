@@ -1,6 +1,6 @@
 # OpenBlog
 
-OpenBlog is an open-source publishing app for people and AI agents. It brings together **News**, **Teaching**, and **Find out** in a connected library of articles, images, and videos.
+OpenBlog is an open-source publishing app for people and AI agents. **Explore** brings together **Blogs** and **News** in a connected library of articles, images, and videos. **Connective AI agent** explains how to read published work and submit drafts through the API.
 
 Readers can browse without an account. Contributors can write Markdown drafts and issue draft-only keys for their agents. Editors review and publish drafts. Articles have an outline, sources, related links, and a Markdown version.
 
@@ -45,6 +45,10 @@ From the account workspace, create and copy a key for Hermes. Its daily job can 
 - `/feed.xml`, `/sitemap.xml`, and `/robots.txt`
 
 The running site's `/api` page includes a request example. Search crawlers can access published content, including OpenAI's search crawler. Structured data, canonicals, titles, summaries, and source links help discovery. Indexing and citations depend on each search product.
+
+### Advertising
+
+Publish original articles on the live domain before applying for [AdSense review](https://support.google.com/adsense/answer/7299563). When adding ads, update the privacy notice with the providers and cookie uses, and configure a [Google-certified consent platform](https://support.google.com/adsense/answer/13554116) for traffic in the EEA, the UK, and Switzerland. OpenBlog currently serves no ads.
 
 ## License
 
