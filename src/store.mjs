@@ -81,11 +81,6 @@ export function createStore(databaseUrl, existingPool) {
          order by (slug = any($2::text[])) desc, published_at desc limit 5`, [article.slug, article.related_slugs ?? [], article.topic]);
       return result.rows;
     },
-    async topics() {
-      if (!pool) return ['The open web', 'Technology', 'Research'];
-      return (await pool.query(`select topic from blog.posts where status = 'published' and topic <> ''
-        group by topic order by count(*) desc, topic limit 12`)).rows.map(({ topic }) => topic);
-    },
     async sitemap() {
       if (!pool) return demoArticles;
       return (await pool.query("select slug, updated_at from blog.posts where status = 'published' order by slug limit 49990")).rows;
