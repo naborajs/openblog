@@ -172,7 +172,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
     const dashboard = member ? await store.dashboard(user) : null;
     return send(res, 200, 'text/html; charset=utf-8', layout(ctx, {
       title: 'Your account', description: 'Manage drafts and agent keys.', path: '/account', privatePage: true,
-      full: !user || !member, content: accountPage({ demo: store.demo, user, member, dashboard, message, key }),
+      content: accountPage({ demo: store.demo, user, member, dashboard, message, key }),
     }));
   }
 
@@ -180,7 +180,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
     const path = url.pathname;
     res.setHeader('Cache-Control', 'private, no-store');
     const render = (title, content, status = 200) => send(res, status, 'text/html; charset=utf-8',
-      layout(ctx, { title, description: title + ' on OpenBlog.', content, path, privatePage: true, full: true }));
+      layout(ctx, { title, description: title + ' on OpenBlog.', content, path, privatePage: true }));
 
     if (request.method === 'GET') {
       if (path === '/account') return showAccount(request, res, ctx);
@@ -277,7 +277,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https:; media-src 'self' https:; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
-    const ctx = { origin, demo: store.demo, topics: [] };
+    const ctx = { origin, demo: store.demo };
     let url;
     try {
       url = new URL(request.url, origin);
@@ -344,7 +344,6 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         return send(res, 200, 'application/rss+xml; charset=utf-8', `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>OpenBlog</title><link>${xml(origin)}</link><description>${xml(description)}</description>${entries}</channel></rss>`);
       }
 
-      ctx.topics = await store.topics();
       const html = (options) => send(res, 200, 'text/html; charset=utf-8', layout(ctx, { path: url.pathname + url.search, ...options }));
       if (path === '/') {
         const [blogs, news] = await Promise.all([
