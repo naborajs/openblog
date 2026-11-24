@@ -185,17 +185,18 @@ button { cursor: pointer; }
 .news-reading .article-header h1 { font-family: var(--serif); font-weight: 700; letter-spacing: -.045em; }
 .byline { margin: 1.25rem 0 1.5rem; display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; font-size: .9rem; color: var(--muted-strong); }
 .article-cover { aspect-ratio: 16 / 9; border-radius: .95rem; margin-bottom: 2rem; }
-.article-aside { align-self: start; position: sticky; top: calc(var(--header-height) + 1.6rem); padding-top: 2.1rem; }
+.article-aside { align-self: start; position: sticky; top: calc(var(--header-height) + 1.6rem); max-height: calc(100dvh - var(--header-height) - 2.5rem); overflow-y: auto; padding: 2.1rem .3rem .2rem; }
 .article-nav { border-left: 1px solid var(--line); padding: .3rem 0 .3rem .85rem; margin-bottom: 1.5rem; }
 .article-nav h2 { font-size: .91rem; font-weight: 730; margin: 0 0 .4rem; }
 .article-nav a { display: block; text-decoration: none; font-size: .89rem; color: var(--muted); padding: .22rem 0; overflow-wrap: anywhere; }
 .article-nav a:hover { color: var(--accent); text-decoration: underline; }
 .article-nav a[aria-current="location"] { color: var(--accent); box-shadow: -2px 0 var(--accent); background: var(--accent-bg); }
 [data-reading-outline] a { padding-inline: .42rem; }
-.article-nav .depth-3, .article-nav .depth-4 { padding-left: .68rem; }
+.article-nav ul { margin: 0; padding: 0; list-style: none; }
+.article-nav ul ul { padding-inline-start: .7rem; }
 .mobile-toc, .mobile-related { display: none; }
 .prose { font-size: 1.075rem; line-height: 1.72; overflow-wrap: anywhere; }
-.prose > * + * { margin-top: .85rem; }
+.prose > * + *, .section-content > * + * { margin-top: .85rem; }
 .prose h2, .sources h2, .article-media h2 { font-size: 1.6rem; line-height: 1.22; letter-spacing: -.044em; margin-top: 1.7rem; }
 .prose h3 { font-size: 1.24rem; margin-top: 1.5rem; }
 .prose img { border-radius: .65rem; height: auto; }
@@ -205,6 +206,19 @@ button { cursor: pointer; }
 .prose ul, .prose ol, .sources ul { padding-left: 1.35rem; }
 .prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .prose th, .prose td { padding: .4rem .55rem; border: 1px solid var(--line); }
+.section-actions { margin-block: 1rem; }
+.section-actions:not([hidden]) { display: flex; flex-wrap: wrap; gap: .45rem; }
+.reading-section { position: relative; border-top: 1px solid var(--line); padding-top: .75rem; }
+.reading-section > :is(h2, h3, h4, h5, h6) { margin-top: 0; min-height: 2.75rem; padding-inline-end: 3rem; line-height: 1.25; }
+.reading-section .reading-section { margin-inline-start: clamp(.4rem, 1.4vw, 1rem); }
+.section-disclosure > summary { position: absolute; inset-block-start: .45rem; inset-inline-end: 0; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; list-style: none; color: var(--accent); border-radius: .35rem; }
+.section-disclosure > summary::-webkit-details-marker { display: none; }
+.section-disclosure > summary::before { content: ''; width: .5rem; height: .5rem; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-.1rem) rotate(45deg); }
+.section-disclosure[open] > summary::before { transform: translateY(.1rem) rotate(225deg); }
+.section-disclosure > summary:is(:hover, :focus-visible) { background: var(--accent-bg); }
+.section-content { padding-block: .45rem 1rem; }
+.reading-preview { position: fixed; z-index: 9; width: min(19rem, calc(100vw - 24px)); max-height: min(14rem, calc(100dvh - 24px)); overflow: auto; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface); color: var(--ink); box-shadow: 0 12px 30px #0004; overflow-wrap: anywhere; }
+.reading-preview p { color: var(--muted); margin-top: .35rem; font-size: .9rem; }
 .information { max-width: 45rem; }
 .article-media video { aspect-ratio: 16 / 9; background: #0a0a0b; border-radius: .35rem; margin: .8rem 0; filter: grayscale(1); }
 .article-media details, .mobile-toc, .field-details { border: 1px solid var(--line); background: var(--surface); border-radius: .62rem; padding: .7rem .85rem; }
