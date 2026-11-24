@@ -17,7 +17,9 @@ try {
 
     assert.equal((await page.goto(url)).status(), 200);
     await page.locator('h1').waitFor();
-    assert.match(await page.locator('h1').textContent(), /Explore what matters/);
+    assert.match(await page.locator('h1').textContent(), /Welcome to OpenBlog/);
+    assert.deepEqual(await page.locator('.top-links a').allTextContents(), ['Blogs', 'News']);
+    assert.deepEqual(await page.locator('.sidebar .side-link span').allTextContents(), ['Explore', 'News', 'Blog', 'Connective AI agent']);
     await page.waitForFunction(() => document.querySelector('.hero-cover img')?.naturalWidth > 0);
     await page.locator('.hero-cover img').evaluate((img) => img.decode());
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -25,10 +27,22 @@ try {
 
     if (name === 'mobile') {
       await page.getByRole('button', { name: 'Open navigation' }).click();
-      await page.locator('.sidebar').getByRole('link', { name: 'Teaching' }).click();
-      await page.waitForURL('**/teaching');
-      assert.equal(await page.locator('h1').textContent(), 'Teaching');
+      await page.locator('.sidebar').getByRole('link', { name: 'Blog', exact: true }).click();
+      await page.waitForURL('**/blogs');
+    } else {
+      await page.locator('.top-links').getByRole('link', { name: 'Blogs', exact: true }).click();
+      await page.waitForURL('**/blogs');
     }
+    await page.locator('.blog-archive').waitFor();
+    assert.equal(await page.locator('h1').textContent(), 'Blogs');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    if (screenshots) await page.screenshot({ path: join(screenshots, name + '-blogs.png'), animations: 'disabled' });
+    await page.locator('.top-links').getByRole('link', { name: 'News', exact: true }).click();
+    await page.waitForURL('**/news');
+    await page.locator('.news-feature').waitFor();
+    assert.equal(await page.locator('.news-headlines .news-brief').count(), 2);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    if (screenshots) await page.screenshot({ path: join(screenshots, name + '-news.png'), animations: 'disabled' });
 
     await page.keyboard.press('/');
     await page.getByRole('dialog').waitFor();
