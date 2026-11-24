@@ -19,6 +19,7 @@ const staticTypes = {
 const rangePattern = /^bytes=(\d*)-(\d*)$/;
 const postRoute = /^\/articles\/([^/]+)(\/markdown)?$/;
 const draftRoute = /^\/account\/drafts\/(new|[^/]+)(\/publish)?$/;
+const editArticleRoute = /^\/account\/articles\/([^/]+)$/;
 const agentKey = /^Bearer (ob_[a-zA-Z0-9_-]{43})$/;
 const pageSize = 12;
 const xml = escape;
@@ -193,6 +194,15 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
             <input type="hidden" name="access_token"><input type="hidden" name="refresh_token">
             <button class="button primary">Confirm email</button><p data-auth-message role="status"></p></form>`));
       }
+      const edit = editArticleRoute.exec(path);
+      if (edit && isSlug(edit[1])) {
+        if (!ctx.user) return redirect(res, '/account');
+        const post = await store.publishedForEditor(ctx.user, edit[1]);
+        if (!post) throw new RequestError(404, 'Article not found.');
+        post.source_urls = post.sources.map(({ url }) => url).join('\n');
+        post.related = post.related_slugs.join(', ');
+        return render('Edit published article', draftPage(post, null, null, path, true));
+      }
       const draft = draftRoute.exec(path);
       if (draft && !draft[2] && (draft[1] === 'new' || isId(draft[1]))) {
         if (!ctx.user) return redirect(res, '/account');
@@ -252,6 +262,18 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
     if (keyRoute && isId(keyRoute[1])) {
       await store.revokeKey(ctx.user, keyRoute[1]);
       return redirect(res, '/account');
+    }
+    const edit = editArticleRoute.exec(path);
+    if (edit && isSlug(edit[1])) {
+      if (member.role !== 'editor') throw new RequestError(403, 'An editor is required to update a published article.');
+      let input;
+      try { input = articleInput(fields); } catch (error) {
+        if (!(error instanceof RequestError)) throw error;
+        return render('Edit published article', draftPage(fields, null, error.message, path, true), 400);
+      }
+      const post = await store.updatePublished(ctx.user, edit[1], input);
+      if (!post) throw new RequestError(404, 'Article not found.');
+      return redirect(res, '/articles/' + post.slug);
     }
     const draft = draftRoute.exec(path);
     if (draft && (draft[1] === 'new' || isId(draft[1]))) {
@@ -392,9 +414,12 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
               referenceList ? '## Sources\n\n' + referenceList : '', article.transcript ? '## Video transcript\n\n' + article.transcript : '',
               'Canonical URL: ' + urlOf(origin, '/articles/' + article.slug)].filter(Boolean).join('\n\n'));
         }
+        if (auth) ctx.user = await auth.user(request, res);
+        const canEdit = ctx.user && (await store.membership(ctx.user))?.role === 'editor';
+        if (ctx.user) res.setHeader('Cache-Control', 'private, no-store');
         return html({
           title: article.title, description: article.summary, path: '/articles/' + article.slug, active: article.section === 'news' ? 'news' : 'blogs',
-          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, await store.related(article)),
+          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, await store.related(article), canEdit),
         });
       }
       const info = information(path, contactEmail);
