@@ -7,14 +7,14 @@ import { createAuth } from './auth.mjs';
 import { articleInput, isId, isSlug, RequestError, text } from './content.mjs';
 import { sections } from './demo.mjs';
 import { createStore } from './store.mjs';
-import { accountPage, articleView, draftPage, escape, home, layout, listing, plainPage, registerPage } from './views.mjs';
+import { accountPage, articleView, blogIndex, draftPage, escape, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
 
 const publication = 'OpenBlog';
 const description = 'A connected library for news, teaching, and curious questions.';
-const basePages = ['', ...Object.keys(sections), 'about', 'policy', 'privacy', 'api'];
+const basePages = ['', 'blogs', ...Object.keys(sections), 'about', 'policy', 'privacy', 'disclaimer', 'contact', 'api'];
 const staticTypes = {
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.webp': 'image/webp', '.ico': 'image/x-icon', '.vtt': 'text/vtt; charset=utf-8', '.mp4': 'video/mp4',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.vtt': 'text/vtt; charset=utf-8', '.mp4': 'video/mp4',
 };
 const rangePattern = /^bytes=(\d*)-(\d*)$/;
 const postRoute = /^\/articles\/([^/]+)(\/markdown)?$/;
@@ -111,20 +111,29 @@ function information(path, contactEmail) {
   const contact = contactParagraph(contactEmail);
   const pages = {
     '/about': ['About OpenBlog', 'OpenBlog connects news, practical learning, and the questions that lead readers deeper.',
-      `<h2>What we publish</h2><p>News explains what changed and why it matters. Teaching offers guides, images, and video lessons. Find out answers questions and connects related ideas.</p>
+      `<h2>What we publish</h2><p>Blogs are our original guides, essays, and explainers. News covers developments and gives readers the context to understand them.</p>
       <h2>How we work</h2><p>Contributors and agents can prepare drafts. Editors review sourcing, clarity, and accuracy before publishing.</p>
       <h2>Open-source software</h2><p>The <a href="https://github.com/naborajs/openblog">website code is public</a> under the MIT License. Editorial rights and crawler permissions are described in the <a href="/policy">editorial policy</a>.</p>${contact}`],
     '/policy': ['Editorial policy', 'How OpenBlog researches, reviews, and licenses its work.',
       `<h2>Standards and corrections</h2><p>We aim to identify original sources, label examples and uncertainty, and give news articles dates and context. Corrections should identify the updated claim. Contact the operator with a link and the information that needs review.</p>
-      <h2>Agent contributions</h2><p>Agents can submit drafts. An editor reviews and approves each publication. Material agent involvement should be disclosed in the published article when it matters to the reader.</p>
+      <h2>Agent contributions</h2><p>Agents can submit drafts. An editor checks claims, sourcing, and rights before publishing. We label material AI assistance and publish original explanations or reporting. Source links point readers to supporting information.</p>
+      <h2>Editorial independence</h2><p>We label paid placements and sponsored material if we publish them. Revenue arrangements do not determine our reporting or corrections.</p>
       <h2>Public crawling and citation</h2><p>Public articles may be indexed, linked, and cited with a brief excerpt and attribution. Use the article’s canonical link and byline. Automated clients should use the public API when practical and respect robots.txt and rate limits.</p>
       <h2>Content rights</h2><p>The MIT License applies to website software. Articles, prose, and editorial media retain their stated rights. Redistribution, republication, and model training require permission except where the law or the materials’ own terms allow them.</p>${contact}`],
     '/privacy': ['Privacy notice', 'How OpenBlog handles reader activity and contributor accounts.',
       `<h2>Reading</h2><p>You can read public articles without an account. The website remembers your color theme on your device. Server access logs may record details such as IP addresses and request paths to operate and protect the service.</p>
       <h2>Accounts and drafts</h2><p>Supabase Auth handles your sign-in email and credentials. OpenBlog stores a user ID, your public byline, your role, and the drafts and posts you create. Session cookies keep you signed in. Agent key secrets are shown once and stored as hashes.</p>
       <h2>Images and video</h2><p>Some articles can load images or video from an external host. The host receives the ordinary network request for the file.</p>
-      <h2>Your account</h2><p>You can revoke agent keys from your workspace. Contact the operator to ask about access to, correction of, or deletion of account data.</p>${contact}`],
-    '/api': ['Agent API', 'Discover published articles and submit drafts on behalf of an OpenBlog contributor.',
+      <h2>Advertising</h2><p>OpenBlog currently serves no ads. If we add advertising, this notice will identify the providers and explain how their cookies and consent choices work.</p>
+      <h2>Your account</h2><p>You can revoke agent keys from your workspace. Visit <a href="/contact">Contact</a> to request access, correction, or deletion of account data.</p>${contact}`],
+    '/disclaimer': ['Disclaimer', 'How to use information published on OpenBlog.',
+      `<h2>Educational information</h2><p>OpenBlog articles offer general information and discussion. For medical, legal, or financial decisions, consult a qualified adviser. Check dated claims and instructions against the linked primary sources before acting.</p>
+      <h2>Independence and links</h2><p>OpenBlog is an independent publication. Product names identify their respective owners. External links are provided as references. Their publishers control those sites and their privacy practices.</p>
+      <h2>Corrections</h2><p>Send the article URL, the claim in question, and any supporting sources through <a href="/contact">Contact</a>.</p>`],
+    '/contact': ['Contact', 'Get in touch with OpenBlog.',
+      `${contact || '<p>For public website feedback, use the <a href="https://github.com/naborajs/openblog/issues">project issue tracker</a>.</p>'}
+      <h2>Corrections and rights requests</h2><p>Include the article URL, what you’d like reviewed, and a source or description that helps us investigate. Keep personal details and account information out of public issues.</p>`],
+    '/api': ['Connective AI agent', 'Discover published articles and submit drafts on behalf of an OpenBlog contributor.',
       `<h2>Read public articles</h2><ul><li><code>GET /api/v1/articles</code> lists articles. Optional parameters are <code>section</code>, <code>topic</code>, <code>q</code>, <code>page</code>, and <code>limit</code>.</li>
       <li><code>GET /api/v1/articles/{slug}</code> returns the article, source links, and canonical URL.</li>
       <li><code>GET /articles/{slug}/markdown</code> serves the public article in Markdown. <a href="/feed.xml">RSS</a> lists recent publications.</li></ul>
@@ -337,10 +346,28 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
 
       ctx.topics = await store.topics();
       const html = (options) => send(res, 200, 'text/html; charset=utf-8', layout(ctx, { path: url.pathname + url.search, ...options }));
-      if (path === '/') return html({
-        title: publication, description, active: 'home', content: home(await store.articles({ limit: 10 })),
-        schema: { '@context': 'https://schema.org', '@type': 'WebSite', name: publication, url: origin, description },
-      });
+      if (path === '/') {
+        const [blogs, news] = await Promise.all([
+          store.articles({ blogOnly: true, limit: 4 }), store.articles({ section: 'news', limit: 5 }),
+        ]);
+        return html({
+          title: publication, description, active: 'home', content: home(blogs, news),
+          schema: { '@context': 'https://schema.org', '@type': 'WebSite', name: publication, url: origin, description },
+        });
+      }
+      if (path === '/blog') return redirect(res, '/blogs');
+      if (path === '/blogs' || path === '/news') {
+        const isNews = path === '/news';
+        const page = numberParam(url, 'page', 1, 1, 10000);
+        const filters = isNews ? { section: 'news' } : { blogOnly: true };
+        const rows = await store.articles({ ...filters, limit: pageSize + 1, offset: (page - 1) * pageSize });
+        const pagination = { page, more: rows.length > pageSize };
+        const renderEdition = isNews ? newsIndex : blogIndex;
+        return html({ title: isNews ? 'News' : 'Blogs',
+          description: isNews ? 'Reporting and context on what is changing.' : 'In-depth articles, practical guides, and ideas worth exploring.',
+          active: isNews ? 'news' : 'blogs', path: path + (page > 1 ? '?page=' + page : ''),
+          content: renderEdition(rows.slice(0, pageSize), pagination) });
+      }
       if (path === '/search' || Object.hasOwn(sections, path.slice(1))) {
         const key = path.slice(1);
         const isSearch = key === 'search';
@@ -350,7 +377,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         const title = isSearch ? (filters.topic || 'Search articles') : sections[key].title;
         const subtitle = isSearch ? 'Find articles by title, topic, or keyword.' : sections[key].description;
         const query = page > 1 ? '?page=' + page : '';
-        return html({ title, description: subtitle, active: key, privatePage: isSearch,
+        return html({ title, description: subtitle, active: isSearch ? '' : 'blogs', privatePage: isSearch,
           path: path + (isSearch ? '' : query), content: listing(title, subtitle, rows.slice(0, pageSize),
             { ...(isSearch ? { search: filters.search, topic: filters.topic } : {}), path, pagination: { page, more: rows.length > pageSize } }) });
       }
@@ -367,12 +394,12 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
               'Canonical URL: ' + urlOf(origin, '/articles/' + article.slug)].filter(Boolean).join('\n\n'));
         }
         return html({
-          title: article.title, description: article.summary, path: '/articles/' + article.slug, active: article.section,
+          title: article.title, description: article.summary, path: '/articles/' + article.slug, active: article.section === 'news' ? 'news' : 'blogs',
           image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, await store.related(article)),
         });
       }
       const info = information(path, contactEmail);
-      if (info) return html(info);
+      if (info) return html({ ...info, active: path === '/api' ? 'api' : '' });
       throw new RequestError(404, 'This page could not be found.');
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }
