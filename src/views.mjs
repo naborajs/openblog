@@ -40,7 +40,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=connections"><script defer src="/interactions.js?v=connections"></script>
+<link rel="stylesheet" href="/styles.css?v=connected-reading-20261126"><script defer src="/interactions.js?v=connected-reading-20261126"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -171,12 +171,41 @@ function outlineList(headings) {
     ` data-section-preview="${e(summary)}"` : ''}>${e(label)}</a>${children.length ? outlineList(children) : ''}</li>`).join('')}</ul>`;
 }
 
-export function articleView(article, related, canEdit = false, candidates = []) {
+function knowledgeMap(article, related) {
+  if (!related.length) return '';
+  return `<section class="knowledge-map" aria-labelledby="connection-title">
+    <div class="section-head"><div><p class="eyebrow">Follow the ideas</p><h2 id="connection-title">Connected reading</h2></div></div>
+    <p class="knowledge-map-intro">These articles connect through shared subjects, explicit links, or terms in their titles and summaries.</p>
+    <div class="knowledge-map-flow"><div class="knowledge-map-current"><span>Current article</span><strong>${e(article.title)}</strong></div>
+      <ul>${related.map((item) => `<li><span class="connection-line" aria-hidden="true"></span><a href="${href(item.slug)}"><strong>${e(item.title)}</strong><span>${e(item.connection_reason || (item.topic === article.topic ? 'Same topic' : 'Related reading'))}</span></a></li>`).join('')}</ul>
+    </div>
+  </section>`;
+}
+
+export function feedbackForm(articleSlug = '', submitted = false, enabled = true) {
+  if (!enabled) return `<section class="feedback-panel" id="reader-feedback"><h2 id="feedback-title">Report an issue</h2><p>Reader reports become available when OpenBlog is connected to its database.</p></section>`;
+  const categories = [['correction', 'Correction'], ['accuracy', 'Accuracy question'], ['broken-link', 'Broken link'], ['accessibility', 'Accessibility'], ['other', 'Other']];
+  return `<section class="feedback-panel" id="reader-feedback" aria-labelledby="feedback-title">
+    <h2 id="feedback-title">Report an issue</h2>
+    <p>Help us review a correction, unclear passage, broken link, or accessibility problem.</p>
+    ${submitted ? flash('Thanks. Your report was sent to the OpenBlog editors.') : ''}
+    <form method="post" action="/feedback" class="feedback-form" aria-labelledby="feedback-title">
+      <input type="hidden" name="article_slug" value="${e(articleSlug)}">
+      <div class="form-trap" aria-hidden="true"><label for="feedback-website">Leave this field empty</label><input id="feedback-website" name="website" tabindex="-1" autocomplete="off"></div>
+      <label for="feedback-category">Report type <span aria-hidden="true">*</span><select id="feedback-category" name="category" required>
+        <option value="">Choose a report type</option>${categories.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
+      </select></label>
+      <label for="feedback-message">What should we review? <span aria-hidden="true">*</span><textarea id="feedback-message" name="message" required minlength="20" maxlength="4000" rows="5" aria-describedby="feedback-help"></textarea></label>
+      <p id="feedback-help" class="small-note">Please include the relevant claim and a source when possible. Do not include private or sensitive information. Reports are stored for editor review; this form does not collect your name or email.</p>
+      <button class="button primary" type="submit">Send report</button>
+    </form>
+  </section>`;
+}
+
+export function articleView(article, related, canEdit = false, candidates = [], { feedbackSubmitted = false, feedbackEnabled = true } = {}) {
   const { bodyHtml, headings } = markdown(article.body, candidates, article.slug);
   const toc = headings.length ? `<nav class="article-nav" data-reading-outline aria-label="Article outline"><h2>On this page</h2>
     ${outlineList(headings)}</nav>` : '';
-  const links = related.length ? `<nav class="article-nav" aria-label="Related articles"><h2>Related reading</h2>
-    ${related.map((item) => `<a href="${href(item.slug)}">${e(item.title)}</a>`).join('')}</nav>` : '';
 
   const isNews = article.section === 'news';
   return `<div class="article-layout ${isNews ? 'news-reading' : 'blog-reading'}">
@@ -187,7 +216,6 @@ export function articleView(article, related, canEdit = false, candidates = []) 
       <div class="byline"><span>By ${e(article.author_name)}</span></div></header>
     ${article.cover_url ? cover(article, 'article-cover', true) : ''}
     ${toc ? `<details class="mobile-toc"><summary>On this page</summary>${toc}</details>` : ''}
-    ${toc ? '<div class="section-actions" hidden><button type="button" class="button" data-expand-sections>Expand all</button><button type="button" class="button" data-collapse-sections>Collapse all</button></div>' : ''}
     <div class="prose">${bodyHtml}</div>
     ${article.video_url ? `<section class="article-media"><h2>Watch the explanation</h2>
       <video controls playsinline preload="metadata" src="${e(article.video_url)}" ${article.video_captions?.startsWith('https://') ? 'crossorigin="anonymous"' : ''} ${article.cover_url ? `poster="${e(article.cover_url)}"` : ''}>
@@ -196,8 +224,8 @@ export function articleView(article, related, canEdit = false, candidates = []) 
     ${article.sources?.length ? `<section class="sources"><h2>Sources</h2><ul>${article.sources.map((source) =>
       `<li><a href="${e(source.url)}" rel="noopener noreferrer">${e(source.title)}</a></li>`).join('')}</ul></section>` : ''}
     <div class="article-tools"><a href="${href(article.slug)}/markdown">Markdown version</a> <button type="button" class="button" data-copy-link>${icon('link')} Copy link</button>${canEdit ? ` <a class="button" href="/account${href(article.slug)}">Edit article</a>` : ''}</div>
-    <div class="mobile-related">${links}</div>
-  </article><aside class="article-aside">${toc}${links}</aside>
+    ${knowledgeMap(article, related)}${feedbackForm(article.slug, feedbackSubmitted, feedbackEnabled)}
+  </article><aside class="article-aside">${toc}</aside>
   <div id="reading-preview" class="reading-preview" role="tooltip" hidden><strong></strong><p></p></div>
   </div>`;
 }
