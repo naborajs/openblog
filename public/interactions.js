@@ -68,34 +68,6 @@ const readingProgress = document.querySelector('[data-reading-progress]');
 const article = document.querySelector('.article');
 if (readingProgress && article) {
   const topbar = readingProgress.closest('.topbar');
-  const disclosures = [...article.querySelectorAll('.section-disclosure')];
-  const sectionActions = article.querySelector('.section-actions');
-  if (sectionActions) {
-    sectionActions.hidden = false;
-    sectionActions.addEventListener('click', (event) => {
-      const button = event.target.closest('button');
-      if (button) {
-        for (const disclosure of disclosures) disclosure.open = button.hasAttribute('data-expand-sections');
-      }
-    });
-  }
-  function openHeading(hash) {
-    const heading = document.getElementById(hash.slice(1));
-    if (!heading?.closest('.reading-section')) return;
-    for (let item = heading.closest('.section-disclosure'); item; item = item.parentElement.closest('.section-disclosure')) {
-      item.open = true;
-    }
-    const ownSection = heading.nextElementSibling;
-    if (ownSection?.matches('.section-disclosure')) ownSection.open = true;
-    return heading;
-  }
-  article.closest('.article-layout').addEventListener('click', (event) => {
-    const link = event.target.closest('[data-reading-outline] a');
-    if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) openHeading(link.hash);
-  });
-  window.addEventListener('hashchange', () => openHeading(location.hash)?.scrollIntoView());
-  openHeading(location.hash);
-
   const outlineLinks = new Map();
   for (const link of document.querySelectorAll('[data-reading-outline] a')) {
     const heading = document.getElementById(link.hash.slice(1));
@@ -110,12 +82,13 @@ if (readingProgress && article) {
     readingFrame = undefined;
     const articleBounds = article.getBoundingClientRect();
     const headerBottom = topbar.getBoundingClientRect().bottom;
+    const readingLine = headerBottom + Math.min(120, window.innerHeight * .12);
     const readingDistance = articleBounds.height - (window.innerHeight - headerBottom);
     const progress = readingDistance > 0 ? (headerBottom - articleBounds.top) / readingDistance : 0;
     let nextHeading;
     for (const heading of outlineLinks.keys()) {
       if (!heading.getClientRects().length) continue;
-      if (heading.getBoundingClientRect().top > headerBottom + 24) break;
+      if (heading.getBoundingClientRect().top > readingLine) break;
       nextHeading = heading;
     }
 
