@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { demoArticles } from './demo.mjs';
+import { definitionTopic, topicMatches } from './connections.mjs';
 
 const articleFields = [
   'section', 'title', 'topic', 'summary', 'body', 'cover_url', 'cover_alt',
@@ -76,26 +77,46 @@ export function createStore(databaseUrl, existingPool) {
       if (!pool) return demoArticles.filter((item) => item.slug !== article.slug &&
         (item.topic === article.topic || article.related_slugs?.includes(item.slug) || item.related_slugs?.includes(article.slug))).slice(0, 5);
       const result = await pool.query(
-        `select slug, title, section from blog.posts where status = 'published' and slug <> $1
-         and (slug = any($2::text[]) or $1 = any(related_slugs) or (topic <> '' and topic = $3))
-         order by (slug = any($2::text[])) desc, published_at desc limit 5`, [article.slug, article.related_slugs ?? [], article.topic]);
+        `with matches as (
+           select slug, title, section, topic, summary,
+             slug = any($2::text[]) as links_from_here,
+             $1 = any(related_slugs) as links_here,
+             topic <> '' and topic = $3 as same_topic,
+             ts_rank_cd(
+               to_tsvector('english', concat_ws(' ', title, topic, summary)),
+               plainto_tsquery('english', concat_ws(' ', $3::text, $4::text, $5::text))
+             ) as relevance
+           from blog.posts
+           where status = 'published' and slug <> $1
+         )
+         select slug, title, section, topic, summary,
+           case when links_from_here then 'Linked from this article'
+                when links_here then 'Links to this article'
+                when same_topic then 'Same topic'
+                else 'Shared article terms' end as connection_reason
+         from matches
+         where links_from_here or links_here or same_topic or relevance > 0
+         order by links_from_here desc, links_here desc, relevance desc, same_topic desc, title, slug
+         limit 6`, [article.slug, article.related_slugs ?? [], article.topic, article.title, article.summary]);
       return result.rows;
     },
     async connectionCandidates(article) {
-      if (!pool) return demoArticles.filter(({ slug, section }) => slug !== article.slug && section !== 'news');
-      const result = await pool.query(
-        `select slug, title
-         from blog.posts
-         cross join lateral (
-           select btrim(regexp_replace(regexp_replace(btrim(regexp_replace(title, '(:|[[:space:]]+[–—][[:space:]]+).*$', '')),
-             '^(what (is|are)|understanding|introduction to)[[:space:]]+', '', 'i'), '[?!.]+$', '')) as term
-         ) candidate
-         where status = 'published' and section <> 'news' and slug <> $1
-           and char_length(candidate.term) between 3 and 48
-           and strpos(lower($2), lower(candidate.term)) > 0
-         order by char_length(candidate.term) desc, lower(candidate.term), slug limit 200`,
-        [article.slug, article.body]);
-      return result.rows;
+      const source = !pool ? demoArticles : (await pool.query(
+        `select slug, title from blog.posts where status = 'published' and slug <> $1 order by slug limit 5000`,
+        [article.slug])).rows;
+      const seen = new Map();
+      for (const candidate of source) {
+        if (candidate.slug === article.slug) continue;
+        const term = definitionTopic(candidate.title).toLowerCase();
+        if (!term) continue;
+        seen.set(term, seen.has(term) ? null : candidate.slug);
+      }
+      const body = article.body ?? '';
+      return [...seen].filter(([term, slug]) => slug && topicMatches(body, term))
+        .map(([term, slug]) => ({ slug, title: source.find((item) => item.slug === slug)?.title }))
+        .filter((candidate) => candidate.title)
+        .sort((a, b) => definitionTopic(b.title).length - definitionTopic(a.title).length)
+        .slice(0, 200);
     },
     async sitemap() {
       if (!pool) return demoArticles;
@@ -131,6 +152,13 @@ export function createStore(databaseUrl, existingPool) {
         `update blog.posts set ${fields.join(', ')}, updated_at = now()
           where slug = $1 and status = 'published' and blog.is_editor() returning slug`,
         [slug, ...values])).rows[0]);
+    },
+    async submitFeedback(articleSlug, category, message) {
+      if (!pool) return false;
+      const result = await pool.query(
+        'insert into blog.reader_feedback (article_slug, category, message) values ($1, $2, $3)',
+        [articleSlug, category, message]);
+      return result.rowCount === 1;
     },
     async saveDraft(user, member, article, id, publish = false) {
       return withIdentity(user, async (client) => {
