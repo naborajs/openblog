@@ -92,10 +92,10 @@ def load_cover(filename, alt):
     if credit.get("rights_verified") is not True or not isinstance(source_info, dict):
         raise ValueError("image-rights record must be verified")
     recorded_file = credit.get("cover_file")
-    if not isinstance(recorded_file, str) or recorded_file != filename:
+    if not isinstance(recorded_file, str) or recorded_file not in (filename, "../covers/" + filename):
         raise ValueError("rights record must name the matching cover basename")
     try:
-        recorded_path = (STAGING / recorded_file).resolve(strict=True)
+        recorded_path = (CREDITS / recorded_file).resolve(strict=True) if recorded_file.startswith("../") else (STAGING / recorded_file).resolve(strict=True)
     except OSError as error:
         raise ValueError("rights record cover file is unavailable") from error
     if recorded_path != source:
