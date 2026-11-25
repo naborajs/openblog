@@ -10,7 +10,7 @@ import re
 import stat
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 PROFILE = Path(os.environ.get("OPENBLOG_PROFILE", Path.home() / ".hermes/profiles/research"))
@@ -63,25 +63,47 @@ def jpeg_dimensions(data):
         pos += length
     raise ValueError("JPEG dimensions could not be read")
 
-def load_cover(filename, alt):
+def safe_https_bytes(url, host, limit, content_types):
+    parsed = urlsplit(url) if isinstance(url, str) else None
+    hosts = {host} if isinstance(host, str) else set(host)
+    if (not parsed or parsed.scheme != "https" or parsed.hostname not in hosts or parsed.username or parsed.password
+            or parsed.port not in (None, 443) or parsed.fragment):
+        raise ValueError("image source must use an approved HTTPS host")
+    request = Request(url, headers={
+        "User-Agent": "OpenBlog/1.0 (+https://blog.naborajs.me/policy)",
+        "Accept": ", ".join(content_types),
+    })
+    try:
+        with build_opener(NoRedirect(), ProxyHandler({})).open(request, timeout=20) as response:
+            if response.status != 200:
+                raise ValueError("image source returned an unexpected status")
+            content_type = response.headers.get_content_type().casefold()
+            if content_type not in content_types:
+                raise ValueError("image source returned an unsupported content type")
+            declared = response.headers.get("Content-Length")
+            if declared and int(declared) > limit:
+                raise ValueError("image source exceeds the download limit")
+            data = response.read(limit + 1)
+    except HTTPError as error:
+        raise ValueError("approved image source returned HTTP " + str(error.code)) from error
+    if not data or len(data) > limit:
+        raise ValueError("image source is empty or exceeds the download limit")
+    return data
+
+
+def plain_metadata(value):
+    value = re.sub(r"<[^>]*>", " ", str(value or ""))
+    return re.sub(r"\s+", " ", unescape(value)).strip()
+
+
+def commons_cover(filename, alt, slug, title):
     if not isinstance(filename, str) or not COVER_RE.fullmatch(filename):
-        raise ValueError("cover_file must be one staged *-cover.jpg filename")
+        raise ValueError("cover_file must be one *-cover.jpg rights-record filename")
     if not isinstance(alt, str) or not alt.strip() or len(alt.strip()) > 180:
         raise ValueError("cover_alt must contain 1 to 180 characters")
-    staging = STAGING.resolve(strict=True)
-    candidate = STAGING / filename
-    if STAGING.is_symlink() or not STAGING.is_dir() or candidate.is_symlink() or not candidate.is_file():
-        raise ValueError("cover must be a regular file in the private staging folder")
+    if STAGING.is_symlink() or not STAGING.is_dir():
+        raise ValueError("private image-rights directory is unavailable")
     os.chmod(STAGING, 0o700)
-    source = candidate.resolve(strict=True)
-    if source.parent != staging:
-        raise ValueError("cover resolved outside the staging folder")
-    info = source.stat()
-    if not stat.S_ISREG(info.st_mode) or info.st_size > 5_000_000:
-        raise ValueError("cover must be a regular file no larger than 5 MB")
-    data = source.read_bytes()
-    if jpeg_dimensions(data) != (1200, 630):
-        raise ValueError("cover must be a 1200 by 630 JPEG")
     credit_path = CREDITS / (filename[:-10] + ".json")
     if CREDITS.is_symlink() or not CREDITS.is_dir() or credit_path.is_symlink() or not credit_path.is_file() or credit_path.stat().st_size > 32_000:
         raise ValueError("matching private image-rights record is required")
@@ -91,32 +113,86 @@ def load_cover(filename, alt):
     source_info = credit.get("image_source")
     if credit.get("rights_verified") is not True or not isinstance(source_info, dict):
         raise ValueError("image-rights record must be verified")
-    recorded_file = credit.get("cover_file")
-    if not isinstance(recorded_file, str) or recorded_file not in (filename, "../covers/" + filename):
-        raise ValueError("rights record must name the matching cover basename")
-    try:
-        recorded_path = (CREDITS / recorded_file).resolve(strict=True) if recorded_file.startswith("../") else (STAGING / recorded_file).resolve(strict=True)
-    except OSError as error:
-        raise ValueError("rights record cover file is unavailable") from error
-    if recorded_path != source:
-        raise ValueError("rights record resolves to a different cover file")
-    if not str(source_info.get("creator", "")).strip() or not str(source_info.get("license", "")).strip():
-        raise ValueError("rights record needs a creator and license")
-    license_name = str(source_info["license"]).strip()
+    if credit.get("slug") != slug or credit.get("title") != title or credit.get("cover_file") != filename:
+        raise ValueError("rights record must match the article and cover filename")
+    if str(credit.get("cover_alt", "")).strip() != alt.strip():
+        raise ValueError("draft alt text must match the rights record")
+    if source_info.get("provider") != "Wikimedia Commons":
+        raise ValueError("only verified Wikimedia Commons photo sources are enabled")
     source_url = str(source_info.get("source_url", "")).strip()
     license_url = str(source_info.get("license_url", "")).strip()
-    is_original = "original" in license_name.casefold() and "creation" in source_url.casefold()
-    if not source_url or (not is_original and not (urlsplit(source_url).scheme == "https" and urlsplit(source_url).hostname)):
-        raise ValueError("rights record needs an HTTPS source URL or an explicit original-creation record")
-    if not is_original and not (urlsplit(license_url).scheme == "https" and urlsplit(license_url).hostname):
-        raise ValueError("rights record needs an HTTPS license URL")
-    credit_alt = credit.get("cover_alt") or credit.get("alt_text")
-    if not isinstance(credit_alt, str) or not credit_alt.strip() or credit_alt.strip() != alt.strip():
-        raise ValueError("draft alt text must match the rights record")
-    required_credit = str(source_info.get("required_credit") or "").strip()
-    return data, hashlib.sha256(data).hexdigest(), required_credit
+    creator = plain_metadata(source_info.get("creator"))
+    license_name = plain_metadata(source_info.get("license"))
+    download_url = str(source_info.get("download_url", "")).strip()
+    source_digest = str(source_info.get("source_sha256", "")).strip().lower()
+    parsed_source = urlsplit(source_url)
+    if (parsed_source.scheme != "https" or parsed_source.hostname != "commons.wikimedia.org"
+            or parsed_source.username or parsed_source.password or parsed_source.query or parsed_source.fragment
+            or not unquote(parsed_source.path).startswith("/wiki/File:") or not creator or len(creator) > 240
+            or not license_name or len(license_name) > 120):
+        raise ValueError("rights record needs a Wikimedia file page, named creator, and license")
+    if not re.fullmatch(r"[0-9a-f]{64}", source_digest):
+        raise ValueError("rights record needs the SHA-256 of the selected Commons image")
 
-def validate_publication(draft, required_credit):
+    file_title = unquote(parsed_source.path).removeprefix("/wiki/")
+    query = urlencode({
+        "action": "query", "titles": file_title, "prop": "imageinfo",
+        "iiprop": "url|extmetadata", "iiurlwidth": "1800", "format": "json", "formatversion": "2",
+    })
+    api_data = safe_https_bytes(
+        "https://commons.wikimedia.org/w/api.php?" + query,
+        "commons.wikimedia.org", 1_000_000, ["application/json"],
+    )
+    try:
+        api_result = json.loads(api_data)
+        page = api_result["query"]["pages"][0]
+        image_info = page["imageinfo"][0]
+        metadata = image_info["extmetadata"]
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Commons did not return usable file and license metadata") from error
+    if page.get("missing") is not None:
+        raise ValueError("Commons file page does not exist")
+    canonical_page = urlsplit(str(image_info.get("descriptionurl", "")))
+    if canonical_page.hostname != "commons.wikimedia.org" or unquote(canonical_page.path).casefold() != unquote(parsed_source.path).casefold():
+        raise ValueError("rights record does not point to the canonical Commons file page")
+
+    commons_license = plain_metadata(metadata.get("LicenseShortName", {}).get("value"))
+    commons_license_url = str(metadata.get("LicenseUrl", {}).get("value") or "").strip()
+    if commons_license.casefold() != license_name.casefold():
+        raise ValueError("recorded license does not match the Commons file page")
+    normalized_license = commons_license.casefold().replace("-", " ")
+    if not (normalized_license in {"cc0", "public domain"}
+            or (normalized_license.startswith("cc by ") and not any(term in normalized_license for term in ("sa", "nc", "nd")))):
+        raise ValueError("only CC0, public-domain, or attribution-only CC BY cover photos are enabled")
+    if commons_license_url.startswith("http://"):
+        commons_license_url = "https://" + commons_license_url[len("http://"):]
+    provided_license = urlsplit(license_url)
+    canonical_license = urlsplit(commons_license_url)
+    if (provided_license.scheme != "https" or provided_license.hostname != canonical_license.hostname
+            or provided_license.path.rstrip("/").casefold() != canonical_license.path.rstrip("/").casefold()):
+        raise ValueError("recorded license URL does not match the Commons file page")
+    artist = plain_metadata(metadata.get("Artist", {}).get("value"))
+    if not artist or creator.casefold() not in artist.casefold():
+        raise ValueError("recorded creator does not match the Commons file page")
+
+    canonical_asset = str(image_info.get("thumburl") or image_info.get("url") or "")
+    provided_asset = urlsplit(download_url)
+    expected_asset = urlsplit(canonical_asset)
+    if (not canonical_asset or expected_asset.scheme != "https" or expected_asset.hostname not in {"upload.wikimedia.org", "thumb.wikimedia.org"}
+            or provided_asset.scheme != "https" or provided_asset.hostname != expected_asset.hostname
+            or provided_asset.username or provided_asset.password or unquote(provided_asset.path) != unquote(expected_asset.path)):
+        raise ValueError("download URL does not match the Commons image asset")
+
+    data = safe_https_bytes(canonical_asset, {"upload.wikimedia.org", "thumb.wikimedia.org"}, 5_000_000, ["image/jpeg"])
+    if hashlib.sha256(data).hexdigest() != source_digest:
+        raise ValueError("downloaded Commons image does not match the recorded SHA-256")
+    width, height = jpeg_dimensions(data)
+    if width < 1200 or height < 630 or not 1.3 <= width / height <= 2.4:
+        raise ValueError("Commons image must be a landscape JPEG of at least 1200 by 630")
+    credit_line = f"Image credit: [{creator}]({source_url}); [{license_name}]({license_url})."
+    return data, hashlib.sha256(data).hexdigest(), credit_line
+
+def validate_publication(draft, credit_line):
     body = draft.get("body")
     if not isinstance(body, str) or PLACEHOLDERS.search(body):
         raise ValueError("article body is missing or contains a draft placeholder")
@@ -148,8 +224,8 @@ def validate_publication(draft, required_credit):
             raise ValueError("every source needs a descriptive title")
     if len(hosts) < 2:
         raise ValueError("sources must come from at least two distinct hosts")
-    if required_credit and required_credit.casefold() not in body.casefold():
-        raise ValueError("the cover license requires a visible credit in the article body")
+    if credit_line.casefold() not in body.casefold():
+        raise ValueError("the verified cover credit must be visible in the article body")
 
 def post_api(path, key, payload, idempotency=None):
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
@@ -161,7 +237,7 @@ def post_api(path, key, payload, idempotency=None):
         return response.status, json.load(response)
 
 def install_cover(data, digest):
-    filename = "hermes-" + digest + "-cover.jpg"
+    filename = "commons-" + digest + "-cover.jpg"
     target = PUBLIC_MEDIA / filename
     if PUBLIC_MEDIA.is_symlink() or not PUBLIC_MEDIA.is_dir():
         raise ValueError("public media directory is unavailable")
@@ -213,9 +289,17 @@ def main():
             raise ValueError("unsupported draft fields: " + ", ".join(sorted(unknown)))
         if "cover_url" in draft:
             raise ValueError("direct cover URLs are not accepted; provide cover_file")
-        data, digest, required_credit = load_cover(draft.get("cover_file"), draft.get("cover_alt"))
-        validate_publication(draft, required_credit)
-        filename = "hermes-" + digest + "-cover.jpg"
+        cover_name = draft.get("cover_file")
+        if not isinstance(cover_name, str) or not COVER_RE.fullmatch(cover_name):
+            raise ValueError("cover_file must be one *-cover.jpg rights-record filename")
+        image_slug = cover_name[:-10]
+        data, digest, credit_line = commons_cover(cover_name, draft.get("cover_alt"), image_slug, draft.get("title"))
+        if not isinstance(draft.get("body"), str):
+            raise ValueError("article body is required before publication")
+        if credit_line.casefold() not in draft["body"].casefold():
+            draft["body"] = draft["body"].rstrip() + "\n\n" + credit_line
+        validate_publication(draft, credit_line)
+        filename = "commons-" + digest + "-cover.jpg"
         payload = dict(draft)
         payload.pop("cover_file")
         payload["cover_alt"] = payload["cover_alt"].strip()
