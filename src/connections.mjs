@@ -9,12 +9,25 @@ const children = (node) => node.childNodes ?? [];
 const plain = (node) => node.nodeName === '#text' ? node.value : children(node).map(plain).join('');
 const tagLevel = (node) => /^h[1-6]$/.test(node.tagName ?? '') ? Math.max(2, Number(node.tagName[1])) : 0;
 const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const ignoredTerms = new Set(['about', 'overview', 'summary', 'introduction', 'conclusion', 'news', 'update', 'guide', 'tutorial']);
+const ignoredTerms = new Set(['about', 'overview', 'summary', 'introduction', 'conclusion', 'news', 'update', 'guide', 'tutorial', 'article', 'everything']);
+
+export function topicMatches(text, term) {
+  if (!term) return false;
+  return new RegExp('(?<![\\p{L}\\p{N}_+#.-])' + escapePattern(term) + '(?![\\p{L}\\p{N}_+#.-])', 'iu').test(text);
+}
 
 export function definitionTopic(title) {
-  const term = title.trim().split(/:|\s+[–—]\s+/, 1)[0]
-    .replace(/^(?:what (?:is|are)|understanding|introduction to)\s+/i, '')
+  let term = title.trim()
+    .replace(/^what does\s+(?:an?\s+|the\s+)?(.+?)\s+(?:actually\s+)?do\??$/i, '$1')
+    .split(/:|\s+[–—]\s+/, 1)[0]
+    .replace(/^why\s+(?:people|users|developers|readers)\s+(?:choose|pick|prefer|avoid|use|trust)\s+/i, '')
+    .replace(/^(?:what (?:is|are|does)|who is|understanding|introduction to|a guide to|guide to)\s+/i, '')
+    .replace(/^(?:why|how|what|when|where|who)\s+(?:(?:i|we)\s+)?(?:(?:don't|do not|didn't|did not|never)\s+)?(?:(?:use|trust|choose|prefer|avoid|build|make|create|set up|install|work|happen)\s+)?/i, '')
+    .replace(/^(?:the|an?|some)\s+/i, '')
+    .replace(/\s+for\s+(?:everything|my\b|personal\b|a personal\b|beginners\b).*$/i, '')
+    .replace(/\s+(?:explained simply|explained|guide|tutorial)$/i, '')
     .replace(/[?!.]+$/, '').trim();
+  term = term.replace(/\s+/g, ' ');
   if (term.length < 3 || term.length > 48 || ignoredTerms.has(term.toLowerCase())) return '';
   if (!/^[\p{L}\p{N}][\p{L}\p{N}.+# -]*$/u.test(term) || term.split(/\s+/).length > 4) return '';
   if (term.length < 4 && term !== term.toUpperCase()) return '';
@@ -41,7 +54,7 @@ function connectParagraphs(document, candidates, currentSlug) {
   const alternatives = [...terms].filter(([, slug]) => slug && !usedSlugs.has(slug))
     .map(([term]) => term).sort((a, b) => b.length - a.length).map(escapePattern);
   if (!alternatives.length) return;
-  const matching = new RegExp('(?<![\\p{L}\\p{N}_])(?:' + alternatives.join('|') + ')(?![\\p{L}\\p{N}_])', 'giu');
+  const matching = new RegExp('(?<![\\p{L}\\p{N}_+#.-])(?:' + alternatives.join('|') + ')(?![\\p{L}\\p{N}_+#.-])', 'giu');
   let added = 0;
   function visit(node, inParagraph = false) {
     if (['a', 'code', 'pre', 'blockquote'].includes(node.tagName) || added >= 12) return;
@@ -85,7 +98,7 @@ export function structureArticle(html, candidates, currentSlug) {
     const level = tagLevel(node);
     if (!level) {
       const parent = ancestry.at(-1);
-      append(parent?.content ?? output, node);
+      append(parent?.section ?? output, node);
       const excerpt = plain(node).replace(/\s+/g, ' ').trim();
       if (parent && !parent.summary && node.tagName === 'p' && excerpt) {
         parent.summary = excerpt.length <= 220 ? excerpt : excerpt.slice(0, 217).trimEnd() + '…';
@@ -105,15 +118,9 @@ export function structureArticle(html, candidates, currentSlug) {
       tree.detachNode(child);
       append(heading, child);
     }
-    const disclosure = element('details', { open: '', class: 'section-disclosure' });
-    const toggle = element('summary', { 'aria-label': 'Toggle section: ' + label });
-    const content = element('div', { class: 'section-content' });
-    append(disclosure, toggle);
-    append(disclosure, content);
     append(section, heading);
-    append(section, disclosure);
-    append(parent?.content ?? output, section);
-    const entry = { id, label, level, summary: '', children: [], content };
+    append(parent?.section ?? output, section);
+    const entry = { id, label, level, summary: '', children: [], section };
     (parent?.children ?? outline).push(entry);
     ancestry.push(entry);
   }
