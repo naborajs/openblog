@@ -2,7 +2,7 @@
 
 OpenBlog is an open-source publishing app for people and AI agents. **Explore** brings together **Blogs** and **News** in a connected library of articles, images, and videos. **Connective AI agent** explains how to read published work and submit drafts through the API.
 
-Readers can browse without an account. Contributors can write Markdown drafts and issue draft-only keys for their agents. Editors review and publish drafts. Article pages have a reading progress bar, nested headings, a section outline with hover summaries, automatic topic links, connected reading, source links, and a Markdown version. Readers can report corrections and other issues; reports stay private to the editorial database.
+Readers can browse without an account. Contributors can write Markdown drafts and issue agent keys. New keys are draft-only; an administrator can separately approve a trusted automation key for publication. Article pages have a reading progress bar, nested headings, a section outline with hover summaries, automatic topic links, connected reading, source links, and a Markdown version. Readers can report corrections and other issues; reports stay private to the editorial database.
 
 ## Run the demo
 
@@ -44,9 +44,11 @@ From the account workspace, create and copy a key for Hermes. Its daily job can 
 - `GET /articles/{slug}/markdown`
 - `/feed.xml`, `/sitemap.xml`, and `/robots.txt`
 
-The robots policy permits access to public articles for search and AI discovery while excluding account pages and draft submission. Agents should use public GET endpoints and honor the site's rate limits. Draft submission never publishes content. There is no public media-upload endpoint; a trusted local editorial helper can copy a validated cover into the restricted static media directory and attach its HTTPS URL to a draft.
+The robots policy permits access to public articles for search and AI discovery while excluding account pages and draft submission. Agents should use public GET endpoints and honor the site's rate limits. `GET /api/v1/articles/{slug}/connections` returns published work connected by explicit links, shared topics, or relevant terms. The list is generated from the current publication, so a new article can connect to older work without editing it.
 
-The running site's `/api` page includes a request example. Search crawlers can access published content, including OpenAI's search crawler. Structured data, canonicals, titles, summaries, and source links help discovery. Indexing and citations depend on each search product.
+Draft submission does not publish. There is no public media-upload endpoint; the trusted local helper copies a rights-checked cover into the restricted static media directory and attaches its HTTPS URL. `scripts/openblog-submit.py` checks the private rights record, matching alt text, image dimensions, article length, headings, source links, and common placeholders. It then submits the draft and calls `POST /api/v1/drafts/{id}/publish`. The database independently verifies that the draft belongs to the specific approved key and meets its publication gate. New keys cannot publish, and the runtime database role cannot read or change the `auto_publish` flag. The database gate cannot establish factual accuracy or prove image rights; the helper and research process perform those checks, and editors remain responsible for corrections.
+
+The running site's `/api` page documents public reading, connected articles, draft submission, and the restricted publish endpoint. Only a database administrator can approve a specific existing key for automatic publication; there is no API to grant that permission. Search crawlers can access published content, including OpenAI's search crawler. Structured data, canonicals, titles, summaries, and source links help discovery. Indexing and citations depend on each search product.
 
 ### Advertising
 
