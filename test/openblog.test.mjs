@@ -16,9 +16,22 @@ const ed = { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', email: 'editor@example.
 const extra = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', email: 'extra@example.test' };
 const actors = [alice, ed, extra];
 const sample = {
-  section: 'teaching', title: 'How publishing works', summary: 'An answer with references.',
+  section: 'teaching', title: 'How publishing works', topic: 'Supabase', summary: 'An answer with references.',
   body: '## The answer\n\nPublished text belongs here.',
   sources: [{ title: 'Example', url: 'https://example.org/' }],
+};
+const strictSample = {
+  section: 'teaching', title: 'A checked example article', summary: 'A sourced article used to exercise the automatic publishing gate.',
+  topic: 'Publishing',
+  body: '## Direct answer\n\n' + Array(700).fill('evidence').join(' ') +
+    '\n\n## What the sources establish\n\nThe sources are deliberately distinct for this test.\n\n### Limits\n\nThis fixture does not claim real-world facts.',
+  cover_url: 'https://blog.naborajs.me/media/covers/hermes-' + 'a'.repeat(64) + '-cover.jpg',
+  cover_alt: 'A simple illustration for a test article about publishing.',
+  sources: [
+    { title: 'Primary source one', url: 'https://publisher-one.example.org/report' },
+    { title: 'Primary source two', url: 'https://publisher-two.example.net/documentation' },
+    { title: 'Independent reference', url: 'https://publisher-three.example.com/analysis' },
+  ],
 };
 
 async function listen(server) {
@@ -69,7 +82,9 @@ test('demo serves pages, media, and the public API without writing data', async 
       const response = await fetch(base + path);
       assert.equal(response.status, 200, path);
     }
-    const blogs = await (await fetch(base + '/blogs')).text();
+    const blogResponse = await fetch(base + '/blogs');
+    assert.equal(blogResponse.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+    const blogs = await blogResponse.text();
     const news = await (await fetch(base + '/news')).text();
     assert.match(blogs, /class="blog-archive"/);
     assert.doesNotMatch(blogs, /How to read a technology release/);
@@ -79,6 +94,8 @@ test('demo serves pages, media, and the public API without writing data', async 
     const article = await (await fetch(base + '/articles/what-happens-when-you-open-a-website')).text();
     assert.match(article, /VideoObject/);
     assert.match(article, /Related reading/);
+    assert.match(article, /Published [^<]+ IST/);
+    assert.match(article, /datetime="2026-11-24T10:00:00\.000Z"/);
     assert.match(article, /web-request.vtt/);
     const version = await fetch(base + '/articles/what-happens-when-you-open-a-website/markdown');
     assert.match(version.headers.get('content-type'), /markdown/);
@@ -89,6 +106,15 @@ test('demo serves pages, media, and the public API without writing data', async 
     const list = await (await fetch(base + '/api/v1/articles?section=teaching&limit=1')).json();
     assert.equal(list.articles.length, 1);
     assert.equal(list.has_more, true);
+    const connections = await (await fetch(base + '/api/v1/articles/what-happens-when-you-open-a-website/connections')).json();
+    assert.equal(connections.article.slug, 'what-happens-when-you-open-a-website');
+    assert.ok(Array.isArray(connections.connections));
+    assert.match(connections.generated_at, /^\d{4}-\d\d-/);
+    assert.ok(connections.connections.length > 0);
+    for (const connection of connections.connections) {
+      assert.equal((await fetch(base + new URL(connection.url).pathname)).status, 200, connection.url);
+      assert.match(connection.url, /^http:\/\/localhost:\d+\/articles\//);
+    }
     const query = await (await fetch(base + '/search?q=technology+release')).text();
     assert.match(query, /How to read a technology release/);
     assert.doesNotMatch(query, /What makes a source useful/);
@@ -102,6 +128,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   await db.exec('create role anon; create role authenticated; create schema auth; create table auth.users(id uuid primary key);');
   await db.exec(await readFile(new URL('../supabase/migrations/202611240001_openblog.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611250001_reader_feedback.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611260001_agent_publish_gate.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
@@ -160,6 +187,13 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     const createKey = await form('/account/keys', { name: 'Hermes' }, alice);
     const key = /ob_[a-zA-Z0-9_-]{43}/.exec(await createKey.text())?.[0];
     assert.ok(key);
+    const approvedKeyResponse = await form('/account/keys', { name: 'Hermes approved' }, alice);
+    const approvedKey = /ob_[a-zA-Z0-9_-]{43}/.exec(await approvedKeyResponse.text())?.[0];
+    assert.ok(approvedKey);
+    await db.exec('reset role;');
+    await db.query("update blog.api_keys set auto_publish = true where name = 'Hermes approved'");
+    await db.exec('set role openblog_runtime;');
+    await assert.rejects(db.query('select auto_publish from blog.api_keys'), /permission denied/);
     const sendDraft = () => fetch(base + '/api/v1/drafts', {
       method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', 'Idempotency-Key': 'day-one' },
       body: JSON.stringify(sample),
@@ -172,6 +206,37 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal((await repeat.json()).draft.id, draft.id);
     assert.equal((await fetch(base + '/articles/' + draft.slug)).status, 404);
     assert.equal((await fetch(base + '/account/drafts/' + draft.id, { headers: { Cookie: sessionCookie(extra.email) } })).status, 404);
+    const deniedPublish = await fetch(base + '/api/v1/drafts/' + draft.id + '/publish', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(deniedPublish.status, 403);
+    const invalidAutoDraft = await fetch(base + '/api/v1/drafts', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + approvedKey, 'Content-Type': 'application/json', 'Idempotency-Key': 'invalid-content' },
+      body: JSON.stringify(sample),
+    });
+    assert.equal(invalidAutoDraft.status, 201);
+    const invalidAuto = (await invalidAutoDraft.json()).draft;
+    const rejectedContent = await fetch(base + '/api/v1/drafts/' + invalidAuto.id + '/publish', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + approvedKey, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(rejectedContent.status, 403);
+    const validAutoDraft = await fetch(base + '/api/v1/drafts', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + approvedKey, 'Content-Type': 'application/json', 'Idempotency-Key': 'valid-article' },
+      body: JSON.stringify(strictSample),
+    });
+    assert.equal(validAutoDraft.status, 201);
+    const validAuto = (await validAutoDraft.json()).draft;
+    const autoPublishRequest = () => fetch(base + '/api/v1/drafts/' + validAuto.id + '/publish', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + approvedKey, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const autoPublished = await autoPublishRequest();
+    assert.equal(autoPublished.status, 200);
+    const publication = await autoPublished.json();
+    assert.equal(publication.status, 'published');
+    assert.equal(publication.slug, validAuto.slug);
+    assert.equal((await (await fetch(base + '/api/v1/articles/' + validAuto.slug)).json()).title, strictSample.title);
+    const retryPublish = await (await autoPublishRequest()).json();
+    assert.equal(retryPublish.published_at, publication.published_at);
     assert.equal((await form('/account/drafts/' + draft.id + '/publish', sample, alice)).status, 403);
     const sourceArticle = { ...sample, body: sample.body + '\n\nSupabase handles data storage.' };
     const published = await form('/account/drafts/' + draft.id + '/publish', sourceArticle, ed);
@@ -210,10 +275,17 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     const targetDraft = await form('/account/drafts/new', topic, alice);
     const targetPath = targetDraft.headers.get('location');
     assert.match(targetPath, /^\/account\/drafts\//);
+    const beforePublishConnections = await (await fetch(base + '/api/v1/articles/' + draft.slug + '/connections')).json();
+    assert.equal(beforePublishConnections.connections.some((item) => item.title === 'What is Supabase?'), false);
     assert.doesNotMatch(await (await fetch(base + publicPath)).text(), /class="topic-link"/);
     const targetPublished = await form(targetPath + '/publish', topic, ed);
     const targetArticle = targetPublished.headers.get('location');
     assert.match(targetArticle, /^\/articles\//);
+    const afterPublishConnections = await (await fetch(base + '/api/v1/articles/' + draft.slug + '/connections')).json();
+    assert.equal(afterPublishConnections.connections.some((item) => item.title === 'What is Supabase?'), true);
+    for (const connection of afterPublishConnections.connections) {
+      assert.equal((await fetch(base + new URL(connection.url).pathname)).status, 200, connection.url);
+    }
     const linkedOlderArticle = await (await fetch(base + publicPath)).text();
     assert.ok(linkedOlderArticle.includes(`href="${targetArticle}" class="topic-link">Supabase</a>`));
     assert.equal((await (await fetch(base + '/api/v1' + publicPath)).json()).body, sourceArticle.body);
@@ -233,7 +305,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal(updated.published_at, detail.published_at);
     const account = await (await fetch(base + '/account', { headers: { Cookie: sessionCookie(alice.email) } })).text();
     assert.doesNotMatch(account, new RegExp(key));
-    const revoke = /action="(\/account\/keys\/[^/]+\/revoke)"/.exec(account)?.[1];
+    const revoke = /<strong>Hermes<\/strong><small>[^<]*<\/small><\/div>\s*<form method="post" action="([^"]+\/revoke)"/.exec(account)?.[1];
     assert.ok(revoke);
     assert.equal((await form(revoke, {}, alice)).status, 303);
     assert.equal((await sendDraft()).status, 401);
