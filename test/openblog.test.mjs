@@ -25,7 +25,7 @@ const strictSample = {
   topic: 'Publishing',
   body: '## Direct answer\n\n' + Array(700).fill('evidence').join(' ') +
     '\n\n## What the sources establish\n\nThe sources are deliberately distinct for this test.\n\n### Limits\n\nThis fixture does not claim real-world facts.',
-  cover_url: 'https://blog.naborajs.me/media/covers/hermes-' + 'a'.repeat(64) + '-cover.jpg',
+  cover_url: 'https://blog.naborajs.me/media/covers/commons-' + 'a'.repeat(64) + '-cover.jpg',
   cover_alt: 'A simple illustration for a test article about publishing.',
   sources: [
     { title: 'Primary source one', url: 'https://publisher-one.example.org/report' },
@@ -129,6 +129,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   await db.exec(await readFile(new URL('../supabase/migrations/202611240001_openblog.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611250001_reader_feedback.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260001_agent_publish_gate.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611260002_require_verified_commons_covers.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
