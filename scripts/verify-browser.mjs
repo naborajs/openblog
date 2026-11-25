@@ -60,6 +60,8 @@ try {
     await page.locator('video').waitFor();
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.equal(await page.locator('track').getAttribute('kind'), 'captions');
+    assert.equal(await page.locator('.section-disclosure, .section-actions').count(), 0);
+    assert(await page.locator('.reading-section').count() > 1);
     const section = '1. Look up the domain';
     let sectionLink;
     if (name === 'desktop') {
@@ -82,16 +84,15 @@ try {
       await page.getByRole('tooltip').getByText(/reuse a DNS answer/).waitFor();
       await page.keyboard.press('Escape');
       await page.getByRole('tooltip').waitFor({ state: 'hidden' });
-      await page.locator('.article-aside').getByRole('link', { name: 'What does an API actually do?' }).hover();
-      await page.getByRole('tooltip').getByText(/requests, responses, and the contract/).waitFor();
+      const relatedLink = page.locator('.knowledge-map').getByRole('link').first();
+      await relatedLink.scrollIntoViewIfNeeded();
+      await relatedLink.hover();
+      await page.getByRole('tooltip').getByText(/start of a trail/).waitFor();
     }
-    await page.getByRole('button', { name: 'Collapse all' }).click();
-    await page.getByText(/The browser can reuse a DNS answer/).filter({ visible: true }).waitFor({ state: 'hidden' });
     await nestedLink.click();
     await page.waitForURL(/#heading-when-a-cached-address-is-enough$/);
     await page.locator('.prose').getByText(/The browser can reuse a DNS answer/).waitFor();
-    await page.getByRole('button', { name: 'Expand all' }).click();
-    assert.equal(await page.locator('.section-disclosure:not([open])').count(), 0);
+    assert.equal(await page.locator('.section-disclosure').count(), 0);
 
     const nextTheme = name === 'tablet' ? 'light' : 'dark';
     await page.getByRole('button', { name: 'Switch to ' + nextTheme + ' theme' }).click();
