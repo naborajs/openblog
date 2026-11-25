@@ -190,5 +190,10 @@ export function createStore(databaseUrl, existingPool) {
         return createDraft(client, { id: identity.user_id, name: identity.author_name, keyId: identity.key_id }, article, idempotencyKey);
       });
     },
+    async publishFromAgent(secret, draftId) {
+      if (!pool) return null;
+      return withIdentity(null, async (client) => (await client.query(
+        'select * from blog.publish_agent_draft($1, $2)', [hashKey(secret), draftId])).rows[0] ?? null);
+    },
   };
 }
