@@ -5,4 +5,6 @@ node_modules/
 coverage/
 content/
 work/
+__pycache__/
+*.py[cod]
 *.log
