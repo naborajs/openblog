@@ -1,10 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-  <rect width="48" height="48" rx="12" fill="#0a0a0b"/>
-  <g fill="none" stroke="#fffdf8" stroke-width="1.15">
-    <circle cx="24" cy="24" r="16"/>
-    <ellipse cx="24" cy="24" rx="8" ry="16"/>
-    <path d="M9 18c9 3 21 3 30 0M9 30c9-3 21-3 30 0"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">OpenBlog connected world mark</title>
+  <rect width="48" height="48" rx="12" fill="#050506"/>
+  <text x="24" y="29" text-anchor="middle" font-family="Georgia,serif" font-size="17" font-weight="700" letter-spacing="-1" fill="#fff" opacity=".3">NS</text>
+  <g fill="none" stroke="#fff" stroke-width="1.35">
+    <circle cx="24" cy="24" r="17"/>
+    <ellipse cx="24" cy="24" rx="8" ry="17"/>
+    <path d="M8 19c9 3.3 23 3.3 32 0M8 29c9-3.3 23-3.3 32 0"/>
   </g>
-  <path d="M7 21h34v6H7z" fill="#0a0a0b"/>
-  <text x="24" y="27" text-anchor="middle" font-family="Georgia,serif" font-size="9" font-weight="bold" letter-spacing="1.2" fill="#fffdf8">NS</text>
+  <path d="M36 11.5 40 8" stroke="#1745aa" stroke-width="1.5"/>
+  <circle cx="40" cy="8" r="2.5" fill="#1745aa"/>
+  <path d="M11 36.5 7 40" stroke="#b51228" stroke-width="1.5"/>
+  <circle cx="7" cy="40" r="2.5" fill="#b51228"/>
 </svg>
