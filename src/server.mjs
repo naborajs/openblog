@@ -1,13 +1,14 @@
 import { createServer } from 'node:http';
 import { stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { isIP } from 'node:net';
 import { extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAuth } from './auth.mjs';
 import { articleInput, isId, isSlug, RequestError, text } from './content.mjs';
 import { sections } from './demo.mjs';
 import { createStore } from './store.mjs';
-import { accountPage, articleView, blogIndex, draftPage, escape, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
+import { accountPage, articleView, blogIndex, draftPage, escape, feedbackForm, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
 
 const publication = 'OpenBlog';
 const description = 'A connected library for news, teaching, and curious questions.';
@@ -27,6 +28,15 @@ const xml = escape;
 const send = (res, status, type, body) => { res.writeHead(status, { 'Content-Type': type }); res.end(body); };
 const json = (res, status, data) => send(res, status, 'application/json; charset=utf-8', JSON.stringify(data));
 const redirect = (res, location) => { res.writeHead(303, { Location: location }); res.end(); };
+
+function clientAddress(request) {
+  const peer = request.socket.remoteAddress || 'local';
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer)) return peer;
+  const forwarded = request.headers['x-forwarded-for'];
+  if (typeof forwarded !== 'string' || forwarded.length > 512) return peer;
+  const trustedProxyAddress = forwarded.split(',').map((value) => value.trim()).at(-1);
+  return trustedProxyAddress && isIP(trustedProxyAddress) ? trustedProxyAddress : peer;
+}
 
 async function readBody(request, expected) {
   const type = request.headers['content-type']?.split(';')[0];
@@ -108,7 +118,7 @@ function contactParagraph(email) {
   return email ? `<p>Contact the operator at <a href="mailto:${escape(email)}">${escape(email)}</a>.</p>` : '';
 }
 
-function information(path, contactEmail) {
+function information(path, contactEmail, feedbackSubmitted = false, feedbackEnabled = true) {
   const contact = contactParagraph(contactEmail);
   const pages = {
     '/about': ['About OpenBlog', 'OpenBlog connects news, practical learning, and the questions that lead readers deeper.',
@@ -119,10 +129,11 @@ function information(path, contactEmail) {
       `<h2>Standards and corrections</h2><p>We aim to identify original sources, label examples and uncertainty, and give news articles dates and context. Corrections should identify the updated claim. Contact the operator with a link and the information that needs review.</p>
       <h2>Agent contributions</h2><p>Agents can submit drafts. An editor checks claims, sourcing, and rights before publishing. We label material AI assistance and publish original explanations or reporting. Source links point readers to supporting information.</p>
       <h2>Editorial independence</h2><p>We label paid placements and sponsored material if we publish them. Revenue arrangements do not determine our reporting or corrections.</p>
-      <h2>Public crawling and citation</h2><p>Public articles may be indexed, linked, and cited with a brief excerpt and attribution. Use the article’s canonical link and byline. Automated clients should use the public API when practical and respect robots.txt and rate limits.</p>
+      <h2>Public crawling and citation</h2><p>Public articles may be indexed, linked, and cited with a brief excerpt and attribution. Use the article’s canonical link and byline. Automated clients may crawl public pages, should use the public API when practical, and must respect robots.txt and rate limits. Do not republish full articles without permission.</p>
       <h2>Content rights</h2><p>The MIT License applies to website software. Articles, prose, and editorial media retain their stated rights. Redistribution, republication, and model training require permission except where the law or the materials’ own terms allow them.</p>${contact}`],
     '/privacy': ['Privacy notice', 'How OpenBlog handles reader activity and contributor accounts.',
       `<h2>Reading</h2><p>You can read public articles without an account. The website remembers your color theme on your device. Server access logs may record details such as IP addresses and request paths to operate and protect the service.</p>
+      <h2>Reader reports</h2><p>If you submit a correction or issue report, we store its category, message, and related article slug (if supplied) in OpenBlog’s editorial database so an editor can investigate. The form does not ask for your name or email, does not publish reports, and does not store your IP address in the report record. Avoid including private or sensitive information. Reports are kept for editorial review and removed when no longer needed.</p>
       <h2>Accounts and drafts</h2><p>Supabase Auth handles your sign-in email and credentials. OpenBlog stores a user ID, your public byline, your role, and the drafts and posts you create. Session cookies keep you signed in. Agent key secrets are shown once and stored as hashes.</p>
       <h2>Images and video</h2><p>Some articles can load images or video from an external host. The host receives the ordinary network request for the file.</p>
       <h2>Advertising</h2><p>OpenBlog currently serves no ads. If we add advertising, this notice will identify the providers and explain how their cookies and consent choices work.</p>
@@ -133,7 +144,7 @@ function information(path, contactEmail) {
       <h2>Corrections</h2><p>Send the article URL, the claim in question, and any supporting sources through <a href="/contact">Contact</a>.</p>`],
     '/contact': ['Contact', 'Get in touch with OpenBlog.',
       `${contact || '<p>For public website feedback, use the <a href="https://github.com/naborajs/openblog/issues">project issue tracker</a>.</p>'}
-      <h2>Corrections and rights requests</h2><p>Include the article URL, what you’d like reviewed, and a source or description that helps us investigate. Keep personal details and account information out of public issues.</p>`],
+      <h2>Corrections and rights requests</h2><p>Include the article URL, what you’d like reviewed, and a source or description that helps us investigate. Keep personal details and account information out of public issues.</p>${feedbackForm('', feedbackSubmitted, feedbackEnabled)}`],
     '/api': ['Connective AI agent', 'Discover published articles and submit drafts on behalf of an OpenBlog contributor.',
       `<h2>Read public articles</h2><ul><li><code>GET /api/v1/articles</code> lists articles. Optional parameters are <code>section</code>, <code>topic</code>, <code>q</code>, <code>page</code>, and <code>limit</code>.</li>
       <li><code>GET /api/v1/articles/{slug}</code> returns the article, source links, and canonical URL.</li>
@@ -161,7 +172,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
   function rateLimit(req, group, limit) {
     const now = Date.now();
     if (limits.size > 1000) for (const [key, value] of limits) if (value.until < now) limits.delete(key);
-    const id = group + ':' + (req.socket.remoteAddress || 'local');
+    const id = group + ':' + clientAddress(req);
     let bucket = limits.get(id);
     if (!bucket || bucket.until < now) { bucket = { count: 0, until: now + 60000 }; limits.set(id, bucket); }
     if (++bucket.count > limit) throw new RequestError(429, 'Too many requests. Try again in a minute.');
@@ -341,6 +352,46 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         throw new RequestError(404, 'API route not found.');
       }
 
+      if (path === '/feedback') {
+        if (method !== 'POST') {
+          res.setHeader('Allow', 'POST');
+          throw new RequestError(405, 'Use the report form to send feedback.');
+        }
+        rateLimit(request, 'reader-feedback', 8);
+        const fetchSite = request.headers['sec-fetch-site'];
+        if (fetchSite && !['same-origin', 'same-site', 'none'].includes(fetchSite)) {
+          throw new RequestError(403, 'Feedback must be sent from OpenBlog.');
+        }
+        const requestOrigin = request.headers.origin;
+        if (requestOrigin) {
+          try {
+            if (new URL(requestOrigin).origin !== origin) throw new RequestError(403, 'Feedback must be sent from OpenBlog.');
+          } catch (error) {
+            if (error instanceof RequestError) throw error;
+            throw new RequestError(403, 'Feedback must be sent from OpenBlog.');
+          }
+        }
+        if (store.demo) throw new RequestError(503, 'Feedback is unavailable in the demo.');
+        const fields = await readBody(request, 'application/x-www-form-urlencoded');
+        const targetSlug = text(fields.article_slug, 120, 'the article slug');
+        if (targetSlug && !isSlug(targetSlug)) throw new RequestError(400, 'Choose a published article.');
+        if (targetSlug && !(await store.article(targetSlug))) throw new RequestError(404, 'Published article not found.');
+        if (fields.website) return redirect(res, targetSlug
+          ? `/articles/${targetSlug}?feedback=sent#reader-feedback`
+          : '/contact?feedback=sent#reader-feedback');
+        const category = text(fields.category, 24, 'a report type', true);
+        if (!['correction', 'accuracy', 'broken-link', 'accessibility', 'other'].includes(category)) {
+          throw new RequestError(400, 'Choose one of the report types.');
+        }
+        const message = text(fields.message, 4000, 'report details', true);
+        if (message.length < 20) throw new RequestError(400, 'Add at least 20 characters so editors can investigate.');
+        const saved = await store.submitFeedback(targetSlug || null, category, message);
+        if (!saved) throw new RequestError(503, 'Feedback is unavailable right now.');
+        return redirect(res, targetSlug
+          ? `/articles/${targetSlug}?feedback=sent#reader-feedback`
+          : '/contact?feedback=sent#reader-feedback');
+      }
+
       if (path === '/account' || path.startsWith('/account/')) {
         if (auth && path !== '/account/confirm') ctx.user = await auth.user(request, res);
         return await handleAccount(request, res, url, ctx);
@@ -349,7 +400,7 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
       if (path === '/robots.txt') {
         const rules = 'Allow: /\nDisallow: /account\nDisallow: /api/v1/drafts\n';
         const robots = store.demo ? 'User-agent: *\nDisallow: /\n' :
-          `User-agent: *\n${rules}\nUser-agent: OAI-SearchBot\n${rules}\nUser-agent: GPTBot\nDisallow: /\nUser-agent: Google-Extended\nDisallow: /\n\nSitemap: ${urlOf(origin, '/sitemap.xml')}\n`;
+          `User-agent: *\n${rules}\nUser-agent: OAI-SearchBot\n${rules}\nUser-agent: GPTBot\n${rules}\nUser-agent: Google-Extended\n${rules}\n\nSitemap: ${urlOf(origin, '/sitemap.xml')}\n`;
         return send(res, 200, 'text/plain; charset=utf-8', robots);
       }
       if (path === '/sitemap.xml') {
@@ -420,10 +471,11 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         const [related, candidates] = await Promise.all([store.related(article), store.connectionCandidates(article)]);
         return html({
           title: article.title, description: article.summary, path: '/articles/' + article.slug, active: article.section === 'news' ? 'news' : 'blogs',
-          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, related, canEdit, candidates),
+          image: article.cover_url, schema: articleSchema(origin, article), content: articleView(article, related, canEdit, candidates,
+            { feedbackSubmitted: url.searchParams.get('feedback') === 'sent', feedbackEnabled: !store.demo }),
         });
       }
-      const info = information(path, contactEmail);
+      const info = information(path, contactEmail, url.searchParams.get('feedback') === 'sent', !store.demo);
       if (info) return html({ ...info, active: path === '/api' ? 'api' : '' });
       throw new RequestError(404, 'This page could not be found.');
     } catch (error) {
