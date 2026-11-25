@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import { createAuth } from '../src/auth.mjs';
+import { definitionTopic, topicMatches } from '../src/connections.mjs';
 import { articleInput } from '../src/content.mjs';
 import { createApp } from '../src/server.mjs';
 import { createStore } from '../src/store.mjs';
@@ -51,6 +52,13 @@ test('article validation and HTML rendering reject unsafe input', () => {
   assert.equal(connected.headings[0].children[0].children[0].summary, 'Escaped summary.');
   assert.equal((connected.bodyHtml.match(/href="\/articles\/supabase"/g) ?? []).length, 1);
   assert.doesNotMatch(connected.bodyHtml, /\/articles\/(?:tls-|self)/);
+  assert.doesNotMatch(connected.bodyHtml, /<details|<summary/);
+  assert.match(connected.bodyHtml, /<section class="reading-section"><h2 id="heading-parent">/);
+  assert.equal(definitionTopic('What is TLS?'), 'TLS');
+  assert.equal(definitionTopic('What does an API actually do?'), 'API');
+  assert.equal(definitionTopic("Why I Don't Use WordPress for My Personal Site"), 'WordPress');
+  assert.equal(topicMatches('C++ helps here, but C+++ is a different token.', 'C++'), true);
+  assert.equal(topicMatches('SupabaseX is not the same token.', 'Supabase'), false);
 });
 
 test('demo serves pages, media, and the public API without writing data', async () => {
@@ -91,8 +99,9 @@ test('demo serves pages, media, and the public API without writing data', async 
 
 test('Supabase schema isolates drafts and agent keys through the HTTP publishing flow', async () => {
   const db = new PGlite();
-  await db.exec('create schema auth; create table auth.users(id uuid primary key);');
+  await db.exec('create role anon; create role authenticated; create schema auth; create table auth.users(id uuid primary key);');
   await db.exec(await readFile(new URL('../supabase/migrations/202611240001_openblog.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611250001_reader_feedback.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
@@ -168,6 +177,26 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     const published = await form('/account/drafts/' + draft.id + '/publish', sourceArticle, ed);
     assert.equal(published.status, 303);
     assert.equal(published.headers.get('location'), '/articles/' + draft.slug);
+    const feedback = await form('/feedback', {
+      article_slug: draft.slug, category: 'correction', message: 'Please verify the linked source for this explanation.'
+    });
+    assert.equal(feedback.status, 303);
+    assert.equal(feedback.headers.get('location'), `/articles/${draft.slug}?feedback=sent#reader-feedback`);
+    assert.equal((await form('/feedback', {
+      article_slug: draft.slug, category: 'correction', message: 'Please verify the linked source for this explanation.'
+    }, null, 'https://elsewhere.example')).status, 403);
+    assert.equal((await form('/feedback', {
+      article_slug: draft.slug, category: 'unknown', message: 'Please verify the linked source for this explanation.'
+    })).status, 400);
+    await assert.rejects(db.query('select * from blog.reader_feedback'), /permission denied/);
+    await assert.rejects(db.query("update blog.reader_feedback set message = 'changed report text with enough characters'"), /permission denied/);
+    await assert.rejects(db.query("insert into blog.reader_feedback (article_slug, category, message) values ('not-published', 'correction', 'This article is not published yet.')"), /row-level security/);
+    await db.exec('reset role;');
+    assert.equal((await db.query('select count(*)::int as reports from blog.reader_feedback')).rows[0].reports, 1);
+    await db.exec('set role anon;');
+    await assert.rejects(db.query("insert into blog.reader_feedback (category, message) values ('other', 'This anonymous direct insert is blocked.')"), /permission denied/);
+    await assert.rejects(db.query('select * from blog.reader_feedback'), /permission denied/);
+    await db.exec('set role openblog_runtime;');
     const detail = await (await fetch(base + '/api/v1/articles/' + draft.slug)).json();
     assert.equal(detail.title, sample.title);
     assert.equal(detail.author_name, 'Alice');
