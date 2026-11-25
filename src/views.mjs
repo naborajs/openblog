@@ -9,6 +9,9 @@ export const escape = (value = '') => String(value ?? '').replace(/[&<>"']/g, (c
 const e = escape;
 const href = (slug) => '/articles/' + encodeURIComponent(slug);
 const date = (value) => value ? new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) : '';
+const articleDateTime = (value) => value ? new Intl.DateTimeFormat('en-IN', {
+  dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata',
+}).format(new Date(value)) : '';
 const json = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 const iconPaths = {
   search: '<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/>',
@@ -95,7 +98,7 @@ function pager(base, params, pagination) {
     ${pagination.more ? link(pagination.page + 1, 'Next page') : ''}</nav>`;
 }
 
-const time = (value) => `<time datetime="${new Date(value).toISOString()}">${date(value)}</time>`;
+const time = (value, prefix = '') => `<time datetime="${new Date(value).toISOString()}">${prefix ? e(prefix) + ' ' : ''}${e(articleDateTime(value))} IST</time>`;
 const articleLinkList = (items) => `<ul class="article-link-list">${items.map((article) => `<li><a href="${href(article.slug)}">${e(article.title)}</a><span>${e(article.topic)}</span></li>`).join('')}</ul>`;
 const emptyArticles = '<div class="empty"><h2>Articles are on the way</h2><p>Published stories will appear here.</p></div>';
 
@@ -123,7 +126,7 @@ export function blogIndex(articles, pagination) {
   return `<header class="blog-intro entrance"><h1>Blogs</h1><p>In-depth articles, practical guides, and ideas worth exploring.</p></header>
     ${articles.length ? `<section class="blog-archive" aria-label="Blog posts">
       ${articles.map((article) => `<article class="blog-entry reveal"><a href="${href(article.slug)}" class="blog-entry-link">
-        <div class="blog-entry-text"><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+        <div class="blog-entry-text"><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
           <h2>${e(article.title)}</h2><p>${e(article.summary)}</p><span class="read-label">Read article</span></div>
         ${article.cover_url ? cover(article, 'blog-entry-cover') : ''}
       </a></article>`).join('')}
@@ -135,12 +138,12 @@ export function newsIndex(articles, pagination) {
   return `<header class="news-intro entrance"><h1>News</h1><p>Reporting and context on what’s changing.</p></header>
     ${lead ? `<div class="news-front entrance"><article class="news-feature"><a href="${href(lead.slug)}">
       ${cover(lead, 'news-cover', true)}
-      <div class="news-feature-text"><div class="entry-meta">${time(lead.published_at)}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
+      <div class="news-feature-text"><div class="entry-meta">${time(lead.published_at, 'Published')}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
       <h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p></div>
     </a></article>
     ${headlines.length ? `<section class="news-headlines" aria-label="More news">
       ${headlines.map((article) => `<article class="news-brief reveal"><a href="${href(article.slug)}"><h3>${e(article.title)}</h3>
-        <p>${e(article.summary)}</p><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+        <p>${e(article.summary)}</p><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
       </a></article>`).join('')}
     </section>` : ''}</div>` : emptyArticles}${pager('/news', {}, pagination)}`;
 }
@@ -211,9 +214,9 @@ export function articleView(article, related, canEdit = false, candidates = [], 
   return `<div class="article-layout ${isNews ? 'news-reading' : 'blog-reading'}">
   <article class="article entrance">
     <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Explore</a><span>/</span><a href="/${isNews ? 'news' : 'blogs'}">${isNews ? 'News' : 'Blogs'}</a></nav>
-    <header class="article-header"><div class="entry-meta">${time(article.published_at)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
+    <header class="article-header"><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
       <h1>${e(article.title)}</h1><p>${e(article.summary)}</p>
-      <div class="byline"><span>By ${e(article.author_name)}</span></div></header>
+      <div class="byline"><span>By ${e(article.author_name)}</span>${Date.parse(article.updated_at) - Date.parse(article.published_at) > 60_000 ? `<span>${time(article.updated_at, 'Updated')}</span>` : ''}</div></header>
     ${article.cover_url ? cover(article, 'article-cover', true) : ''}
     ${toc ? `<details class="mobile-toc"><summary>On this page</summary>${toc}</details>` : ''}
     <div class="prose">${bodyHtml}</div>
