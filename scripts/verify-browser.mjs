@@ -76,6 +76,7 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await capture('news');
+    const currentNewsArticle = await page.locator('.news-feature-link').getAttribute('href');
 
     await page.keyboard.press('/');
     await page.getByRole('dialog').waitFor();
@@ -84,51 +85,62 @@ try {
     await page.getByRole('dialog').getByRole('button', { name: 'Search', exact: true }).click();
     await page.waitForURL('**/search?q=website');
     await capture('search-results');
-    await page.getByRole('link', { name: /What happens when you open a website/ }).click();
-    await page.waitForURL('**/articles/what-happens-when-you-open-a-website');
-    await page.locator('video').waitFor();
-    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    assert.equal(await page.locator('track').getAttribute('kind'), 'captions');
-    assert.equal(await page.locator('.section-disclosure, .section-actions').count(), 0);
-    assert(await page.locator('.reading-section').count() > 1);
-    await capture('article-top');
-    const section = '1. Look up the domain';
-    let sectionLink;
-    if (name === 'desktop') {
-      sectionLink = page.locator('.article-aside').getByRole('link', { name: section });
+    const fixtureArticle = page.getByRole('link', { name: /What happens when you open a website/ });
+    if (await fixtureArticle.count()) {
+      await fixtureArticle.click();
+      await page.waitForURL('**/articles/what-happens-when-you-open-a-website');
+      await page.locator('video').waitFor();
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.equal(await page.locator('track').getAttribute('kind'), 'captions');
+      assert.equal(await page.locator('.section-disclosure, .section-actions').count(), 0);
+      assert(await page.locator('.reading-section').count() > 1);
+      await capture('article-top');
+      const section = '1. Look up the domain';
+      let sectionLink;
+      if (name === 'desktop') {
+        sectionLink = page.locator('.article-aside').getByRole('link', { name: section });
+      } else {
+        await page.getByText('On this page', { exact: true }).filter({ visible: true }).click();
+        sectionLink = page.locator('.mobile-toc').getByRole('link', { name: section });
+      }
+      await sectionLink.click();
+      await page.waitForURL(/#heading-1-look-up-the-domain$/);
+      await page.waitForFunction(() => document.querySelectorAll('[data-reading-outline] a[aria-current="location"][href="#heading-1-look-up-the-domain"]').length === 2);
+      await page.waitForFunction(() => Number(document.querySelector('[data-reading-progress]').style.getPropertyValue('--reading-progress')) > 0);
+      await capture('article-section');
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await page.waitForFunction(() => !document.querySelector('[data-reading-outline] a[aria-current]'));
+      const nestedName = 'When a cached address is enough';
+      const outline = page.locator(name === 'desktop' ? '.article-aside' : '.mobile-toc');
+      const nestedLink = outline.getByRole('link', { name: nestedName });
+      if (name === 'desktop') {
+        await nestedLink.hover();
+        await page.getByRole('tooltip').getByText(/reuse a DNS answer/).waitFor();
+        await page.keyboard.press('Escape');
+        await page.getByRole('tooltip').waitFor({ state: 'hidden' });
+        const relatedLink = page.locator('.knowledge-map').getByRole('link').first();
+        await relatedLink.scrollIntoViewIfNeeded();
+        await relatedLink.hover();
+        await page.getByRole('tooltip').getByText(/start of a trail/).waitFor();
+      }
+      await nestedLink.click();
+      await page.waitForURL(/#heading-when-a-cached-address-is-enough$/);
+      await page.locator('.prose').getByText(/The browser can reuse a DNS answer/).waitFor();
+      assert.equal(await page.locator('.section-disclosure').count(), 0);
+      await capture('article-nested');
+      await page.locator('#reader-feedback').scrollIntoViewIfNeeded();
+      await page.locator('#feedback-title').waitFor();
+      assert.match(await page.locator('#reader-feedback').textContent(), /available when OpenBlog is connected to its database/);
+      await capture('article-feedback');
     } else {
-      await page.getByText('On this page', { exact: true }).filter({ visible: true }).click();
-      sectionLink = page.locator('.mobile-toc').getByRole('link', { name: section });
+      const articleResponse = await page.goto(new URL(currentNewsArticle, url).href);
+      assert.equal(articleResponse.status(), 200);
+      await page.locator('.prose').waitFor();
+      assert((await page.locator('h1').innerText()).trim().length > 0);
+      assert((await page.locator('.prose').innerText()).trim().length > 100);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await capture('article-top');
     }
-    await sectionLink.click();
-    await page.waitForURL(/#heading-1-look-up-the-domain$/);
-    await page.waitForFunction(() => document.querySelectorAll('[data-reading-outline] a[aria-current="location"][href="#heading-1-look-up-the-domain"]').length === 2);
-    await page.waitForFunction(() => Number(document.querySelector('[data-reading-progress]').style.getPropertyValue('--reading-progress')) > 0);
-    await capture('article-section');
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-    await page.waitForFunction(() => !document.querySelector('[data-reading-outline] a[aria-current]'));
-    const nestedName = 'When a cached address is enough';
-    const outline = page.locator(name === 'desktop' ? '.article-aside' : '.mobile-toc');
-    const nestedLink = outline.getByRole('link', { name: nestedName });
-    if (name === 'desktop') {
-      await nestedLink.hover();
-      await page.getByRole('tooltip').getByText(/reuse a DNS answer/).waitFor();
-      await page.keyboard.press('Escape');
-      await page.getByRole('tooltip').waitFor({ state: 'hidden' });
-      const relatedLink = page.locator('.knowledge-map').getByRole('link').first();
-      await relatedLink.scrollIntoViewIfNeeded();
-      await relatedLink.hover();
-      await page.getByRole('tooltip').getByText(/start of a trail/).waitFor();
-    }
-    await nestedLink.click();
-    await page.waitForURL(/#heading-when-a-cached-address-is-enough$/);
-    await page.locator('.prose').getByText(/The browser can reuse a DNS answer/).waitFor();
-    assert.equal(await page.locator('.section-disclosure').count(), 0);
-    await capture('article-nested');
-    await page.locator('#reader-feedback').scrollIntoViewIfNeeded();
-    await page.locator('#feedback-title').waitFor();
-    assert.match(await page.locator('#reader-feedback').textContent(), /available when OpenBlog is connected to its database/);
-    await capture('article-feedback');
 
     const nextTheme = name === 'tablet' ? 'light' : 'dark';
     await page.getByRole('button', { name: 'Switch to ' + nextTheme + ' theme' }).click();
