@@ -76,7 +76,7 @@ ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 function cover(article, className = '', eager = false) {
   const media = article.cover_url
     ? `<img src="${e(article.cover_url)}" alt="${e(article.cover_alt)}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">`
-    : '<div class="cover-placeholder" aria-hidden="true">✳</div>';
+    : '<div class="cover-placeholder"><span>Photo unavailable</span></div>';
   return `<div class="cover ${className}">${media}</div>`;
 }
 function imageCredit(credit) {
@@ -91,6 +91,35 @@ function imageCredit(credit) {
   if (source.protocol !== 'https:' || source.hostname !== 'commons.wikimedia.org' ||
       license.protocol !== 'https:' || license.hostname !== 'creativecommons.org') return '';
   return `<p class="image-credit">Photo by <a href="${e(source.href)}" rel="noopener noreferrer">${e(credit.creator)}</a> · <a href="${e(license.href)}" rel="noopener noreferrer">${e(credit.license)}</a></p>`;
+}
+function newsTopic(article) {
+  const topic = String(article.topic ?? '').trim();
+  if (topic && !/^(news|news analysis|general news)$/i.test(topic)) return topic;
+  const text = `${article.title ?? ''} ${article.summary ?? ''}`.toLocaleLowerCase('en');
+  if (/\b(acquisition|acquisitions|merger|mergers|earnings|revenue|business|markets?)\b/.test(text)) return 'Business';
+  if (/\b(election|parliament|president|prime minister|diplomacy|ceasefire|sanctions|government)\b/.test(text)) return 'World';
+  if (/\b(cyber|security|malware|malvertising|cve[- ]|breach|vulnerabilit|firewall|pan-os|critical infrastructure|data leak|data exposure|attacks?)\b/.test(text)) return 'Technology & security';
+  return 'Latest';
+}
+function newsTopicId(topic) {
+  const slug = topic.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return 'news-topic-' + (slug || 'latest');
+}
+function newsMeta(article) {
+  return `<div class="entry-meta"><span class="section-label news">News</span><span>${e(newsTopic(article))}</span>${time(article.published_at)}</div>`;
+}
+function newsBrief(article) {
+  return `<article class="news-brief reveal"><a class="news-brief-link" href="${href(article.slug)}">
+    ${cover(article, 'news-brief-cover')}
+    <div class="news-brief-copy">${newsMeta(article)}<h3>${e(article.title)}</h3><p>${e(article.summary)}</p></div>
+  </a>${imageCredit(article.cover_credit)}</article>`;
+}
+function newsCard(article) {
+  return `<article class="news-card reveal"><a class="news-card-link" href="${href(article.slug)}">
+    ${cover(article, 'news-card-cover')}
+    <div class="news-card-copy">${newsMeta(article)}<h3>${e(article.title)}</h3><p>${e(article.summary)}</p><span class="read-label">Read story</span></div>
+  </a>${imageCredit(article.cover_credit)}</article>`;
 }
 const sectionLabel = (article) => `<span class="section-label ${e(article.section)}">${e(sections[article.section]?.title)}</span>`;
 
@@ -147,18 +176,44 @@ export function blogIndex(articles, pagination) {
 }
 
 export function newsIndex(articles, pagination) {
-  const [lead, ...headlines] = articles;
-  return `<header class="news-intro entrance"><h1>News</h1><p>Reporting and context on what’s changing.</p></header>
-    ${lead ? `<div class="news-front entrance"><article class="news-feature"><a href="${href(lead.slug)}">
-      ${cover(lead, 'news-cover', true)}
-      <div class="news-feature-text"><div class="entry-meta">${time(lead.published_at, 'Published')}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
-      <h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p></div>
-    </a></article>
-    ${headlines.length ? `<section class="news-headlines" aria-label="More news">
-      ${headlines.map((article) => `<article class="news-brief reveal"><a href="${href(article.slug)}"><h3>${e(article.title)}</h3>
-        <p>${e(article.summary)}</p><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
-      </a></article>`).join('')}
-    </section>` : ''}</div>` : emptyArticles}${pager('/news', {}, pagination)}`;
+  const seen = new Set();
+  const unique = articles.filter((article) => {
+    const key = `${article.title ?? ''}\n${article.summary ?? ''}`.toLocaleLowerCase('en')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const [lead, ...rest] = unique;
+  const headlines = rest.slice(0, 2);
+  const groups = new Map();
+  for (const article of rest.slice(2)) {
+    const topic = newsTopic(article);
+    if (topic === 'Latest') continue;
+    if (!groups.has(topic)) groups.set(topic, []);
+    groups.get(topic).push(article);
+  }
+  const topics = [...groups.keys()];
+  const topicNav = topics.length ? `<nav class="news-topic-nav" aria-label="News topics"><a href="#latest-stories">Latest</a>
+    ${topics.map((topic) => `<a href="#${e(newsTopicId(topic))}">${e(topic)}</a>`).join('')}</nav>`
+    : '<nav class="news-topic-nav" aria-label="News topics"><a href="#latest-stories">Latest</a></nav>';
+  const shelves = topics.map((topic) => `<section class="news-topic-shelf" id="${e(newsTopicId(topic))}" aria-labelledby="${e(newsTopicId(topic))}-title">
+    <div class="section-head"><h2 id="${e(newsTopicId(topic))}-title">${e(topic)}</h2><span>${groups.get(topic).length} ${groups.get(topic).length === 1 ? 'story' : 'stories'}</span></div>
+    <div class="news-card-grid">${groups.get(topic).map(newsCard).join('')}</div>
+  </section>`).join('');
+  return `<header class="news-intro entrance"><div><p class="news-kicker">OpenBlog newsroom</p><h1>News</h1>
+      <p>Reporting and context on what’s changing, with sources you can follow.</p></div>
+      ${lead ? `<p class="news-updated"><span>Latest story</span>${time(lead.published_at)}</p>` : ''}
+    </header>
+    ${unique.length ? `${topicNav}<section class="news-front entrance" id="latest-stories" aria-label="Latest stories">
+      <article class="news-feature"><a class="news-feature-link" href="${href(lead.slug)}">
+        ${cover(lead, 'news-cover', true)}
+        <div class="news-feature-text">${newsMeta(lead)}<h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p><span class="read-label">Read story</span></div>
+      </a>${imageCredit(lead.cover_credit)}</article>
+      ${headlines.length ? `<section class="news-headlines" aria-labelledby="news-headlines-title"><h2 id="news-headlines-title">More latest news</h2>
+        ${headlines.map(newsBrief).join('')}
+      </section>` : ''}
+    </section>${shelves}` : emptyArticles}${pager('/news', {}, pagination)}`;
 }
 
 export function listing(title, subtitle, articles, { search, topic, pagination, path } = {}) {
