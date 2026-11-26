@@ -117,7 +117,7 @@ export function agentCoverInput(input, coverOrigin) {
     throw new RequestError(400, 'The photo-rights record does not match the Commons photograph.');
   }
   const normalizedLicense = clean.license.toLowerCase().replaceAll('-', ' ');
-  const isBy = /^cc by (?:2\.0|3\.0|4\.0)$/.test(normalizedLicense);
+  const isBy = /^cc by (?:2\.0|2\.5|3\.0|4\.0)$/.test(normalizedLicense);
   const isPublicDomain = /^(?:cc0(?: 1\.0)?|public domain)$/.test(normalizedLicense);
   if (!isBy && !isPublicDomain) throw new RequestError(400, 'Use CC BY, CC0, or public-domain photographs only.');
 
@@ -129,7 +129,7 @@ export function agentCoverInput(input, coverOrigin) {
   } catch { throw new RequestError(400, 'Use valid HTTPS Commons and license links.'); }
   const licensePath = licenseUrl.pathname.replace(/\/$/, '');
   const allowedLicensePath = isBy
-    ? /^\/licenses\/by\/(?:2\.0|3\.0|4\.0)$/.test(licensePath)
+    ? /^\/licenses\/by\/(?:2\.0|2\.5|3\.0|4\.0)$/.test(licensePath)
     : /^\/publicdomain\/(?:zero|mark)\/1\.0(?:\/deed\.[a-z]{2}(?:-[A-Z]{2})?)?$/.test(licensePath);
   if (sourceUrl.protocol !== 'https:' || sourceUrl.hostname !== 'commons.wikimedia.org' || sourceUrl.username || sourceUrl.password ||
       sourceUrl.search || sourceUrl.hash || !/^\/wiki\/File:[^/]+$/.test(sourceUrl.pathname) ||
