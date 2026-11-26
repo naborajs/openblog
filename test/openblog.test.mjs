@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import { createAuth } from '../src/auth.mjs';
 import { definitionTopic, topicMatches } from '../src/connections.mjs';
-import { articleInput } from '../src/content.mjs';
+import { agentCoverInput, articleInput } from '../src/content.mjs';
 import { createApp } from '../src/server.mjs';
 import { createStore } from '../src/store.mjs';
 import { markdown } from '../src/views.mjs';
@@ -33,6 +33,13 @@ const strictSample = {
     { title: 'Independent reference', url: 'https://publisher-three.example.com/analysis' },
   ],
 };
+const coverCredit = (hash) => ({
+  provider: 'Wikimedia Commons', creator: 'Example photographer', license: 'CC BY 4.0',
+  source_url: 'https://commons.wikimedia.org/wiki/File:Example_photo.jpg',
+  license_url: 'https://creativecommons.org/licenses/by/4.0/', sha256: hash,
+  media_type: 'photograph', visual_review: 'A real exterior photograph with no generated overlays.',
+  relevance: 'The visible network equipment matches the article topic and is not a generic illustration.',
+});
 
 async function listen(server) {
   server.listen(0, '127.0.0.1');
@@ -51,6 +58,24 @@ test('article validation and HTML rendering reject unsafe input', () => {
   }
   assert.throws(() => articleInput({ ...sample, cover_url: '/media/image.webp' }), /image description/);
   assert.throws(() => articleInput({ ...sample, video_url: '/media/lesson.mp4' }), /transcript/);
+  const digest = 'a'.repeat(64);
+  const verifiedCover = agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A technician tests a network switch in a lab.', cover_credit: coverCredit(digest),
+  }, 'https://blog.naborajs.me');
+  assert.equal(verifiedCover.cover_credit.sha256, digest);
+  assert.throws(() => agentCoverInput({
+    cover_url: 'https://other.example/media/covers/commons-' + digest + '-cover.jpg',
+    cover_alt: 'A photo.', cover_credit: coverCredit(digest),
+  }, 'https://blog.naborajs.me'), /first-party cover path/);
+  assert.throws(() => agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A diagram.', cover_credit: { ...coverCredit(digest), media_type: 'diagram' },
+  }, 'https://blog.naborajs.me'), /photo-rights record/);
+  assert.throws(() => agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A photo.', cover_credit: coverCredit(digest), title: 'Try to edit the article',
+  }, 'https://blog.naborajs.me'), /only the verified cover/);
   const linked = articleInput({ ...sample, body: '[Related lesson](/articles/related-lesson#heading-start)' });
   assert.deepEqual(linked.related_slugs, ['related-lesson']);
   const html = markdown('## First answer\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n## First answer');
@@ -94,6 +119,8 @@ test('demo serves pages, media, and the public API without writing data', async 
     const article = await (await fetch(base + '/articles/what-happens-when-you-open-a-website')).text();
     assert.match(article, /VideoObject/);
     assert.match(article, /Related reading/);
+    assert.match(article, /class="mobile-toc"/);
+    assert.doesNotMatch(article, /<details class="mobile-toc"/);
     assert.match(article, /Published [^<]+ IST/);
     assert.match(article, /datetime="2026-11-24T10:00:00\.000Z"/);
     assert.match(article, /web-request.vtt/);
@@ -130,6 +157,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   await db.exec(await readFile(new URL('../supabase/migrations/202611250001_reader_feedback.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260001_agent_publish_gate.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260002_require_verified_commons_covers.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611260003_verified_agent_cover_updates.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
@@ -159,7 +187,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   });
   const providerUrl = await listen(provider);
   const origin = 'http://localhost:3100';
-  const app = createApp({ store: createStore(null, pool), auth: createAuth(providerUrl, 'fixture-publishable-key', origin), origin });
+  const app = createApp({ store: createStore(null, pool), auth: createAuth(providerUrl, 'fixture-publishable-key', origin), origin, coverOrigin: 'https://blog.naborajs.me' });
   const base = await listen(app);
   const form = (path, fields, actor, requestOrigin = origin) => fetch(base + path, {
     method: 'POST', redirect: 'manual',
@@ -195,6 +223,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     await db.query("update blog.api_keys set auto_publish = true where name = 'Hermes approved'");
     await db.exec('set role openblog_runtime;');
     await assert.rejects(db.query('select auto_publish from blog.api_keys'), /permission denied/);
+    await assert.rejects(db.query("update blog.posts set cover_credit = '{}'::jsonb"), /permission denied/);
     const sendDraft = () => fetch(base + '/api/v1/drafts', {
       method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', 'Idempotency-Key': 'day-one' },
       body: JSON.stringify(sample),
@@ -236,6 +265,32 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal(publication.status, 'published');
     assert.equal(publication.slug, validAuto.slug);
     assert.equal((await (await fetch(base + '/api/v1/articles/' + validAuto.slug)).json()).title, strictSample.title);
+    const newDigest = 'b'.repeat(64);
+    const coverUpdate = {
+      cover_url: 'https://blog.naborajs.me/media/covers/commons-' + newDigest + '-cover.jpg',
+      cover_alt: 'A technician tests a network switch in a lab.', cover_credit: coverCredit(newDigest),
+    };
+    const coverPath = '/api/v1/articles/' + validAuto.slug + '/cover';
+    const sendCoverUpdate = (token, payload = coverUpdate) => fetch(base + coverPath, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    assert.equal((await sendCoverUpdate(key)).status, 403, 'ordinary agent keys cannot replace published covers');
+    assert.equal((await sendCoverUpdate(approvedKey, { ...coverUpdate, title: 'Forbidden text edit' })).status, 400);
+    const coverSaved = await sendCoverUpdate(approvedKey);
+    assert.equal(coverSaved.status, 200);
+    const coverResult = await coverSaved.json();
+    assert.equal(coverResult.status, 'updated');
+    assert.equal(coverResult.updated_slug, validAuto.slug);
+    assert.equal(coverResult.updated_cover_credit.sha256, newDigest);
+    const coverReadback = await (await fetch(base + '/api/v1/articles/' + validAuto.slug)).json();
+    assert.equal(coverReadback.cover_url, coverUpdate.cover_url);
+    assert.equal(coverReadback.cover_credit.creator, 'Example photographer');
+    assert.equal(coverReadback.title, strictSample.title, 'the cover route does not edit article text');
+    assert.equal(coverReadback.body, strictSample.body, 'the cover route preserves the published article body');
+    assert.equal(coverReadback.published_at, publication.published_at, 'the original publication time is preserved');
+    const attributedArticle = await (await fetch(base + '/articles/' + validAuto.slug)).text();
+    assert.match(attributedArticle, /Photo by <a[^>]+>Example photographer<\/a>/);
+    assert.match(attributedArticle, /href="https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/"/);
     const retryPublish = await (await autoPublishRequest()).json();
     assert.equal(retryPublish.published_at, publication.published_at);
     assert.equal((await form('/account/drafts/' + draft.id + '/publish', sample, alice)).status, 403);
