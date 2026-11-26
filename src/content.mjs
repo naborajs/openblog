@@ -130,7 +130,7 @@ export function agentCoverInput(input, coverOrigin) {
   const licensePath = licenseUrl.pathname.replace(/\/$/, '');
   const allowedLicensePath = isBy
     ? /^\/licenses\/by\/(?:2\.0|3\.0|4\.0)$/.test(licensePath)
-    : /^\/publicdomain\/(?:zero|mark)\/1\.0$/.test(licensePath);
+    : /^\/publicdomain\/(?:zero|mark)\/1\.0(?:\/deed\.[a-z]{2}(?:-[A-Z]{2})?)?$/.test(licensePath);
   if (sourceUrl.protocol !== 'https:' || sourceUrl.hostname !== 'commons.wikimedia.org' || sourceUrl.username || sourceUrl.password ||
       sourceUrl.search || sourceUrl.hash || !/^\/wiki\/File:[^/]+$/.test(sourceUrl.pathname) ||
       licenseUrl.protocol !== 'https:' || licenseUrl.hostname !== 'creativecommons.org' || licenseUrl.username || licenseUrl.password ||
