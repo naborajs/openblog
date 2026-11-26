@@ -70,7 +70,7 @@ export function createStore(databaseUrl, existingPool) {
           .slice(offset, offset + limit);
       }
       const result = await pool.query(
-        `select slug, title, summary, section, topic, cover_url, cover_alt, author_name, published_at, updated_at
+        `select slug, title, summary, section, topic, cover_url, cover_alt, cover_credit, author_name, published_at, updated_at
          from blog.posts where status = 'published'
            and ($1 = '' or section = $1) and ($2 = '' or topic = $2)
            and ($3 = '' or strpos(lower(concat_ws(' ', title, summary, topic)), lower($3)) > 0)
@@ -81,7 +81,7 @@ export function createStore(databaseUrl, existingPool) {
     async article(slug) {
       if (!pool) return demoArticles.find((article) => article.slug === slug);
       const result = await pool.query(
-        `select slug, title, summary, section, topic, body, cover_url, cover_alt, video_url, video_captions,
+        `select slug, title, summary, section, topic, body, cover_url, cover_alt, cover_credit, video_url, video_captions,
           transcript, sources, related_slugs, author_name, published_at, updated_at
          from blog.posts where status = 'published' and slug = $1`, [slug]);
       return result.rows[0];
@@ -207,6 +207,12 @@ export function createStore(databaseUrl, existingPool) {
       if (!pool) return null;
       return withIdentity(null, async (client) => (await client.query(
         'select * from blog.publish_agent_draft($1, $2)', [hashKey(secret), draftId])).rows[0] ?? null);
+    },
+    async updateAgentCover(secret, slug, cover) {
+      if (!pool) return null;
+      return withIdentity(null, async (client) => (await client.query(
+        'select * from blog.update_agent_cover($1, $2, $3, $4, $5::jsonb)',
+        [hashKey(secret), slug, cover.cover_url, cover.cover_alt, JSON.stringify(cover.cover_credit)])).rows[0] ?? null);
     },
   };
 }
