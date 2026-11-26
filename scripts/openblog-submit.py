@@ -119,6 +119,12 @@ def commons_cover(filename, alt, slug, title):
         raise ValueError("draft alt text must match the rights record")
     if source_info.get("provider") != "Wikimedia Commons":
         raise ValueError("only verified Wikimedia Commons photo sources are enabled")
+    if source_info.get("media_type") != "photograph":
+        raise ValueError("the selected asset must be a researched photograph, not generated art, a diagram, or a screenshot")
+    visual_review = plain_metadata(source_info.get("visual_review"))
+    relevance = plain_metadata(source_info.get("relevance"))
+    if not 20 <= len(visual_review) <= 500 or not 20 <= len(relevance) <= 500:
+        raise ValueError("rights record must document visual inspection and article-specific relevance")
     source_url = str(source_info.get("source_url", "")).strip()
     license_url = str(source_info.get("license_url", "")).strip()
     creator = plain_metadata(source_info.get("creator"))
@@ -190,7 +196,13 @@ def commons_cover(filename, alt, slug, title):
     if width < 1200 or height < 630 or not 1.3 <= width / height <= 2.4:
         raise ValueError("Commons image must be a landscape JPEG of at least 1200 by 630")
     credit_line = f"Image credit: [{creator}]({source_url}); [{license_name}]({license_url})."
-    return data, hashlib.sha256(data).hexdigest(), credit_line
+    credit = {
+        "provider": "Wikimedia Commons", "creator": creator, "license": license_name,
+        "source_url": source_url, "license_url": license_url,
+        "sha256": hashlib.sha256(data).hexdigest(), "media_type": "photograph",
+        "visual_review": visual_review, "relevance": relevance,
+    }
+    return data, hashlib.sha256(data).hexdigest(), credit_line, credit
 
 def validate_publication(draft, credit_line):
     body = draft.get("body")
@@ -236,6 +248,28 @@ def post_api(path, key, payload, idempotency=None):
     with build_opener(NoRedirect(), ProxyHandler({})).open(request, timeout=20) as response:
         return response.status, json.load(response)
 
+def load_editorial_key():
+    key_path = Path(os.environ.get("OPENBLOG_KEY_FILE", PROFILE / "secrets/openblog_draft_key"))
+    if key_path.is_symlink() or not key_path.is_file() or key_path.stat().st_mode & 0o077:
+        raise ValueError("editorial-key file is missing or has unsafe permissions")
+    key = key_path.read_text(encoding="utf-8").strip()
+    if not KEY_RE.fullmatch(key):
+        raise ValueError("editorial-key file format is invalid")
+    return key
+
+def read_public_article(slug):
+    request = Request(LOCAL_API + "/api/v1/articles/" + slug, headers={
+        "User-Agent": "OpenBlog/1.0 (+https://blog.naborajs.me/policy)",
+        "Accept": "application/json",
+    })
+    with build_opener(NoRedirect(), ProxyHandler({})).open(request, timeout=20) as response:
+        if response.status != 200 or response.headers.get_content_type() != "application/json":
+            raise ValueError("published article could not be read from the local API")
+        article = json.load(response)
+    if not isinstance(article, dict) or article.get("slug") != slug or not isinstance(article.get("title"), str):
+        raise ValueError("published article API response did not match the requested slug")
+    return article
+
 def install_cover(data, digest):
     filename = "commons-" + digest + "-cover.jpg"
     target = PUBLIC_MEDIA / filename
@@ -261,10 +295,46 @@ def install_cover(data, digest):
             os.unlink(temporary)
     return filename
 
+def verify_public_cover(filename, digest):
+    public_url = ORIGIN + "/media/covers/" + filename
+    data = safe_https_bytes(public_url, "blog.naborajs.me", 5_000_000, ["image/jpeg"])
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError("public cover did not return the verified Commons image bytes")
+
+def verify_public_attribution(slug, credit):
+    page_url = ORIGIN + "/articles/" + slug
+    page = safe_https_bytes(page_url, "blog.naborajs.me", 1_000_000, ["text/html"])
+    html = page.decode("utf-8", errors="replace")
+    if ('class="image-credit"' not in html or
+            unescape(credit["creator"]) not in unescape(html) or
+            unescape(credit["license"]) not in unescape(html)):
+        raise ValueError("public article page did not show the verified photographer and license credit")
+
+def replace_cover(secret, slug, filename, alt, article, validated=None):
+    data, digest, _credit_line, credit = validated or commons_cover(filename, alt, slug, article["title"])
+    public_filename = "commons-" + digest + "-cover.jpg"
+    install_cover(data, digest)
+    payload = {
+        "cover_url": ORIGIN + "/media/covers/" + public_filename,
+        "cover_alt": alt.strip(),
+        "cover_credit": credit,
+    }
+    status, result = post_api("/api/v1/articles/" + slug + "/cover", secret, payload)
+    if (status != 200 or not isinstance(result, dict) or result.get("status") != "updated"
+            or result.get("updated_slug") != slug or result.get("updated_cover_url") != payload["cover_url"]
+            or result.get("updated_cover_credit", {}).get("sha256") != digest):
+        raise ValueError("cover update API response did not confirm the exact image and rights record")
+    verify_public_cover(public_filename, digest)
+    verify_public_attribution(slug, credit)
+    return result
+
 def main():
     cli = argparse.ArgumentParser()
-    cli.add_argument("draft", type=Path)
-    cli.add_argument("--dedupe", required=True)
+    cli.add_argument("draft", nargs="?", type=Path)
+    cli.add_argument("--dedupe")
+    cli.add_argument("--replace-cover", metavar="SLUG", help="replace only the cover of a published article")
+    cli.add_argument("--cover-file", help="private staged *-cover.jpg name for --replace-cover")
+    cli.add_argument("--cover-alt", help="literal image description for --replace-cover")
     cli.add_argument("--dry-run", action="store_true", help="Validate only; do not upload or call the API.")
     args = cli.parse_args()
     try:
@@ -275,6 +345,28 @@ def main():
         if local_api.scheme != "http" or local_api.hostname not in ("127.0.0.1", "localhost", "::1") or local_api.username or local_api.password:
             raise ValueError("OPENBLOG_LOCAL_API must point to the local OpenBlog HTTP listener")
         profile = PROFILE.resolve(strict=True)
+
+        if args.replace_cover:
+            slug = args.replace_cover.strip()
+            if not SLUG_RE.fullmatch(slug) or len(slug) > 120 or args.draft or args.dedupe:
+                raise ValueError("use --replace-cover with one article slug and no draft or --dedupe")
+            if not isinstance(args.cover_file, str) or not COVER_RE.fullmatch(args.cover_file):
+                raise ValueError("--replace-cover requires one private *-cover.jpg rights-record file")
+            if not isinstance(args.cover_alt, str) or not args.cover_alt.strip() or len(args.cover_alt.strip()) > 180:
+                raise ValueError("--replace-cover requires concise, literal alt text")
+            article = read_public_article(slug)
+            data, digest, _credit_line, credit = commons_cover(args.cover_file, args.cover_alt, slug, article["title"])
+            if args.dry_run:
+                print(json.dumps({"status":"validated","slug":slug,"cover_sha256":digest,"cover_credit":credit}))
+                return
+            key = load_editorial_key()
+            result = replace_cover(key, slug, args.cover_file, args.cover_alt, article,
+                                   (data, digest, _credit_line, credit))
+            print(json.dumps({"status":"cover_updated","slug":slug,"cover_url":result["updated_cover_url"],"cover_sha256":digest}))
+            return
+
+        if not args.draft or not args.dedupe or args.cover_file or args.cover_alt:
+            raise ValueError("draft submission requires a draft path and --dedupe; use --replace-cover for a published image")
         draft_path = args.draft.resolve(strict=True)
         if not draft_path.is_relative_to(profile) or draft_path.stat().st_size > 256_000:
             raise ValueError("draft must be under the research profile and at most 256 KB")
@@ -293,7 +385,7 @@ def main():
         if not isinstance(cover_name, str) or not COVER_RE.fullmatch(cover_name):
             raise ValueError("cover_file must be one *-cover.jpg rights-record filename")
         image_slug = cover_name[:-10]
-        data, digest, credit_line = commons_cover(cover_name, draft.get("cover_alt"), image_slug, draft.get("title"))
+        data, digest, credit_line, credit = commons_cover(cover_name, draft.get("cover_alt"), image_slug, draft.get("title"))
         if not isinstance(draft.get("body"), str):
             raise ValueError("article body is required before publication")
         if credit_line.casefold() not in draft["body"].casefold():
@@ -307,12 +399,7 @@ def main():
         if args.dry_run:
             print(json.dumps({"status":"validated","cover_file":filename,"cover_url":payload["cover_url"],"section":payload["section"]}))
             return
-        key_path = Path(os.environ.get("OPENBLOG_KEY_FILE", PROFILE / "secrets/openblog_draft_key"))
-        if key_path.is_symlink() or not key_path.is_file() or key_path.stat().st_mode & 0o077:
-            raise ValueError("draft-key file is missing or has unsafe permissions")
-        key = key_path.read_text(encoding="utf-8").strip()
-        if not KEY_RE.fullmatch(key):
-            raise ValueError("draft-key file format is invalid")
+        key = load_editorial_key()
         fingerprint = hashlib.sha256((payload["section"] + ":" + identity).encode()).hexdigest()
         install_cover(data, digest)
         status, response = post_api("/api/v1/drafts", key, payload, "hermes-" + fingerprint)
@@ -326,7 +413,18 @@ def main():
                 or published.get("slug") != result["slug"] or not isinstance(published.get("url"), str)
                 or not published["url"].startswith(ORIGIN + "/articles/")):
             raise ValueError("draft was saved but the publication gate did not approve it")
-        print(json.dumps({"status":"published","draft_id":result["id"],"slug":published["slug"],"url":published["url"],"cover_file":filename}))
+        credit_status, credit_result = post_api("/api/v1/articles/" + published["slug"] + "/cover", key, {
+            "cover_url": ORIGIN + "/media/covers/" + filename,
+            "cover_alt": payload["cover_alt"],
+            "cover_credit": credit,
+        })
+        if (credit_status != 200 or not isinstance(credit_result, dict) or credit_result.get("status") != "updated"
+                or credit_result.get("updated_slug") != published["slug"]
+                or credit_result.get("updated_cover_credit", {}).get("sha256") != digest):
+            raise ValueError("article published, but the structured image-rights update was rejected; body attribution remains visible")
+        verify_public_cover(filename, digest)
+        verify_public_attribution(published["slug"], credit)
+        print(json.dumps({"status":"published","draft_id":result["id"],"slug":published["slug"],"url":published["url"],"cover_file":filename,"cover_credit_saved":True}))
     except HTTPError as error:
         retry = error.headers.get("Retry-After")
         message = "OpenBlog rejected the draft with HTTP " + str(error.code)
