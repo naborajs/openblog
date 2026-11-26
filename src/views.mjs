@@ -43,7 +43,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=connected-reading-20261126"><script defer src="/interactions.js?v=connected-reading-20261126"></script>
+<link rel="stylesheet" href="/styles.css?v=cover-credits-20261126"><script defer src="/interactions.js?v=cover-credits-20261126"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -78,6 +78,19 @@ function cover(article, className = '', eager = false) {
     ? `<img src="${e(article.cover_url)}" alt="${e(article.cover_alt)}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">`
     : '<div class="cover-placeholder" aria-hidden="true">✳</div>';
   return `<div class="cover ${className}">${media}</div>`;
+}
+function imageCredit(credit) {
+  if (!credit || credit.provider !== 'Wikimedia Commons' || typeof credit.creator !== 'string' ||
+      typeof credit.license !== 'string' || typeof credit.source_url !== 'string' || typeof credit.license_url !== 'string') return '';
+  let source;
+  let license;
+  try {
+    source = new URL(credit.source_url);
+    license = new URL(credit.license_url);
+  } catch { return ''; }
+  if (source.protocol !== 'https:' || source.hostname !== 'commons.wikimedia.org' ||
+      license.protocol !== 'https:' || license.hostname !== 'creativecommons.org') return '';
+  return `<p class="image-credit">Photo by <a href="${e(source.href)}" rel="noopener noreferrer">${e(credit.creator)}</a> · <a href="${e(license.href)}" rel="noopener noreferrer">${e(credit.license)}</a></p>`;
 }
 const sectionLabel = (article) => `<span class="section-label ${e(article.section)}">${e(sections[article.section]?.title)}</span>`;
 
@@ -217,8 +230,8 @@ export function articleView(article, related, canEdit = false, candidates = [], 
     <header class="article-header"><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
       <h1>${e(article.title)}</h1><p>${e(article.summary)}</p>
       <div class="byline"><span>By ${e(article.author_name)}</span>${Date.parse(article.updated_at) - Date.parse(article.published_at) > 60_000 ? `<span>${time(article.updated_at, 'Updated')}</span>` : ''}</div></header>
-    ${article.cover_url ? cover(article, 'article-cover', true) : ''}
-    ${toc ? `<details class="mobile-toc"><summary>On this page</summary>${toc}</details>` : ''}
+    ${article.cover_url ? `<div class="article-cover-block">${cover(article, 'article-cover', true)}${imageCredit(article.cover_credit)}</div>` : ''}
+    ${toc ? `<div class="mobile-toc">${toc}</div>` : ''}
     <div class="prose">${bodyHtml}</div>
     ${article.video_url ? `<section class="article-media"><h2>Watch the explanation</h2>
       <video controls playsinline preload="metadata" src="${e(article.video_url)}" ${article.video_captions?.startsWith('https://') ? 'crossorigin="anonymous"' : ''} ${article.cover_url ? `poster="${e(article.cover_url)}"` : ''}>
