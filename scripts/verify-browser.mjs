@@ -57,6 +57,13 @@ try {
     await page.waitForURL('**/news');
     await page.locator('.news-feature').waitFor();
     assert.equal(await page.locator('.news-headlines .news-brief').count(), 2);
+    assert.equal(await page.locator('.news-topic-nav a').first().getAttribute('href'), '#latest-stories');
+    for (const image of await page.locator('.news-front .cover img').all()) {
+      await image.scrollIntoViewIfNeeded();
+      await image.evaluate((element) => element.decode());
+      assert(await image.evaluate((element) => element.naturalWidth > 0));
+    }
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await capture('news');
 
