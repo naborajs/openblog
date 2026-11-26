@@ -73,3 +73,69 @@ export function articleInput(input) {
     related_slugs: [...linkedArticles],
   };
 }
+
+const coverCreditFields = [
+  'provider', 'creator', 'license', 'source_url', 'license_url', 'sha256',
+  'media_type', 'visual_review', 'relevance',
+];
+
+export function agentCoverInput(input, coverOrigin) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).sort().join(',') !== 'cover_alt,cover_credit,cover_url') {
+    throw new RequestError(400, 'Send only the verified cover URL, alt text, and image-rights record.');
+  }
+
+  const expectedOrigin = new URL(coverOrigin);
+  if (expectedOrigin.protocol !== 'https:') throw new RequestError(503, 'Cover updates require the public HTTPS site.');
+  const image = text(input.cover_url, 180, 'a first-party cover URL', true);
+  let imageUrl;
+  try { imageUrl = new URL(image); } catch { throw new RequestError(400, 'Use the verified first-party cover path.'); }
+  const coverMatch = /^\/media\/covers\/commons-([0-9a-f]{64})-cover\.jpg$/.exec(imageUrl.pathname);
+  if (!coverMatch || imageUrl.origin !== expectedOrigin.origin || imageUrl.search || imageUrl.hash || imageUrl.username || imageUrl.password) {
+    throw new RequestError(400, 'Use the verified first-party cover path.');
+  }
+
+  const alt = text(input.cover_alt, 180, 'an image description', true);
+  const source = input.cover_credit;
+  if (!source || typeof source !== 'object' || Array.isArray(source) ||
+      Object.keys(source).sort().join(',') !== [...coverCreditFields].sort().join(',')) {
+    throw new RequestError(400, 'Provide the complete Wikimedia photo-rights record.');
+  }
+  const clean = {
+    provider: text(source.provider, 40, 'the image provider', true),
+    creator: text(source.creator, 240, 'the photographer or creator', true),
+    license: text(source.license, 120, 'the image license', true),
+    source_url: text(source.source_url, 1200, 'the Commons file page', true),
+    license_url: text(source.license_url, 300, 'the license page', true),
+    sha256: text(source.sha256, 64, 'the image checksum', true).toLowerCase(),
+    media_type: text(source.media_type, 24, 'the image type', true),
+    visual_review: text(source.visual_review, 500, 'the visual review', true),
+    relevance: text(source.relevance, 500, 'the image relevance note', true),
+  };
+  if (clean.provider !== 'Wikimedia Commons' || clean.media_type !== 'photograph' || clean.sha256 !== coverMatch[1] ||
+      !/^[a-f0-9]{64}$/.test(clean.sha256) || /[<>]/.test(clean.creator + clean.license + clean.visual_review + clean.relevance)) {
+    throw new RequestError(400, 'The photo-rights record does not match the Commons photograph.');
+  }
+  const normalizedLicense = clean.license.toLowerCase().replaceAll('-', ' ');
+  const isBy = /^cc by (?:2\.0|3\.0|4\.0)$/.test(normalizedLicense);
+  const isPublicDomain = /^(?:cc0(?: 1\.0)?|public domain)$/.test(normalizedLicense);
+  if (!isBy && !isPublicDomain) throw new RequestError(400, 'Use CC BY, CC0, or public-domain photographs only.');
+
+  let sourceUrl;
+  let licenseUrl;
+  try {
+    sourceUrl = new URL(clean.source_url);
+    licenseUrl = new URL(clean.license_url);
+  } catch { throw new RequestError(400, 'Use valid HTTPS Commons and license links.'); }
+  const licensePath = licenseUrl.pathname.replace(/\/$/, '');
+  const allowedLicensePath = isBy
+    ? /^\/licenses\/by\/(?:2\.0|3\.0|4\.0)$/.test(licensePath)
+    : /^\/publicdomain\/(?:zero|mark)\/1\.0$/.test(licensePath);
+  if (sourceUrl.protocol !== 'https:' || sourceUrl.hostname !== 'commons.wikimedia.org' || sourceUrl.username || sourceUrl.password ||
+      sourceUrl.search || sourceUrl.hash || !/^\/wiki\/File:[^/]+$/.test(sourceUrl.pathname) ||
+      licenseUrl.protocol !== 'https:' || licenseUrl.hostname !== 'creativecommons.org' || licenseUrl.username || licenseUrl.password ||
+      licenseUrl.search || licenseUrl.hash || !allowedLicensePath) {
+    throw new RequestError(400, 'Use a matching Wikimedia Commons file page and supported license link.');
+  }
+  return { cover_url: imageUrl.href, cover_alt: alt, cover_credit: clean };
+}
