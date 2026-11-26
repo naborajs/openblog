@@ -43,7 +43,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=cover-credits-20261126"><script defer src="/interactions.js?v=cover-credits-20261126"></script>
+<link rel="stylesheet" href="/styles.css?v=newsroom-20261127"><script defer src="/interactions.js?v=cover-credits-20261126"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
