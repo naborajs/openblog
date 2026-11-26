@@ -64,6 +64,21 @@ test('article validation and HTML rendering reject unsafe input', () => {
     cover_alt: 'A technician tests a network switch in a lab.', cover_credit: coverCredit(digest),
   }, 'https://blog.naborajs.me');
   assert.equal(verifiedCover.cover_credit.sha256, digest);
+  const cc0CoverCredit = {
+    ...coverCredit(digest),
+    license: 'CC0',
+    license_url: 'https://creativecommons.org/publicdomain/zero/1.0/deed.en',
+  };
+  const verifiedCc0Cover = agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A technician tests a network switch in a lab.', cover_credit: cc0CoverCredit,
+  }, 'https://blog.naborajs.me');
+  assert.equal(verifiedCc0Cover.cover_credit.license, 'CC0');
+  assert.throws(() => agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A technician tests a network switch in a lab.',
+    cover_credit: { ...cc0CoverCredit, license_url: 'https://creativecommons.org/publicdomain/zero/1.0/deed.en/other' },
+  }, 'https://blog.naborajs.me'), /matching Wikimedia Commons file page and supported license link/);
   assert.throws(() => agentCoverInput({
     cover_url: 'https://other.example/media/covers/commons-' + digest + '-cover.jpg',
     cover_alt: 'A photo.', cover_credit: coverCredit(digest),
@@ -158,6 +173,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   await db.exec(await readFile(new URL('../supabase/migrations/202611260001_agent_publish_gate.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260002_require_verified_commons_covers.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260003_verified_agent_cover_updates.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611260004_accept_cc0_deed_urls.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
@@ -291,6 +307,24 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     const attributedArticle = await (await fetch(base + '/articles/' + validAuto.slug)).text();
     assert.match(attributedArticle, /Photo by <a[^>]+>Example photographer<\/a>/);
     assert.match(attributedArticle, /href="https:\/\/creativecommons\.org\/licenses\/by\/4\.0\/"/);
+    const cc0Digest = 'c'.repeat(64);
+    const cc0CoverUpdate = {
+      cover_url: 'https://blog.naborajs.me/media/covers/commons-' + cc0Digest + '-cover.jpg',
+      cover_alt: 'A technician tests a network switch in a lab.',
+      cover_credit: {
+        ...coverCredit(cc0Digest),
+        license: 'CC0',
+        license_url: 'https://creativecommons.org/publicdomain/zero/1.0/deed.en',
+      },
+    };
+    const cc0CoverSaved = await sendCoverUpdate(approvedKey, cc0CoverUpdate);
+    assert.equal(cc0CoverSaved.status, 200, 'the approved route accepts the canonical Commons CC0 deed URL');
+    const cc0Readback = await (await fetch(base + '/api/v1/articles/' + validAuto.slug)).json();
+    assert.equal(cc0Readback.cover_credit.license, 'CC0');
+    assert.equal(cc0Readback.cover_credit.sha256, cc0Digest);
+    assert.equal(cc0Readback.body, strictSample.body, 'CC0 cover metadata cannot edit article text');
+    const cc0Article = await (await fetch(base + '/articles/' + validAuto.slug)).text();
+    assert.match(cc0Article, /href="https:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0\/deed\.en"/);
     const retryPublish = await (await autoPublishRequest()).json();
     assert.equal(retryPublish.published_at, publication.published_at);
     assert.equal((await form('/account/drafts/' + draft.id + '/publish', sample, alice)).status, 403);
