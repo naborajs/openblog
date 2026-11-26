@@ -8,6 +8,19 @@ const articleFields = [
   'video_url', 'video_captions', 'transcript', 'sources', 'related_slugs',
 ];
 const hashKey = (key) => createHash('sha256').update(key).digest('hex');
+const connectionStopwords = new Set([
+  'about', 'after', 'also', 'and', 'are', 'because', 'been', 'being', 'can', 'does', 'each', 'for',
+  'from', 'have', 'how', 'into', 'its', 'may', 'more', 'most', 'not', 'of', 'or', 'our', 'should',
+  'some', 'than', 'that', 'the', 'their', 'them', 'there', 'these', 'they', 'this', 'those', 'through',
+  'under', 'was', 'were', 'what', 'when', 'where', 'which', 'who', 'why', 'with', 'would', 'you', 'your',
+  'article', 'guide', 'news', 'tutorial', 'update',
+]);
+const connectionSearchText = (article) => [...new Set(
+  [article.topic, article.title, article.summary].join(' ').match(/[a-z0-9+#.-]+/gi) ?? [],
+)].map((term) => term.toLowerCase())
+  .filter((term) => term.length >= 3 && !/^\d+$/.test(term) && !connectionStopwords.has(term))
+  .slice(0, 32)
+  .join(' OR ');
 
 export function createStore(databaseUrl, existingPool) {
   const pool = existingPool ?? (databaseUrl && new Pool({ connectionString: databaseUrl, max: 5 }));
@@ -84,7 +97,7 @@ export function createStore(databaseUrl, existingPool) {
              topic <> '' and topic = $3 as same_topic,
              ts_rank_cd(
                to_tsvector('english', concat_ws(' ', title, topic, summary)),
-               plainto_tsquery('english', concat_ws(' ', $3::text, $4::text, $5::text))
+               websearch_to_tsquery('english', $4::text)
              ) as relevance
            from blog.posts
            where status = 'published' and slug <> $1
@@ -96,8 +109,8 @@ export function createStore(databaseUrl, existingPool) {
                 else 'Shared article terms' end as connection_reason
          from matches
          where links_from_here or links_here or same_topic or relevance > 0
-         order by links_from_here desc, links_here desc, relevance desc, same_topic desc, title, slug
-         limit 6`, [article.slug, article.related_slugs ?? [], article.topic, article.title, article.summary]);
+         order by links_from_here desc, links_here desc, same_topic desc, relevance desc, title, slug
+         limit 6`, [article.slug, article.related_slugs ?? [], article.topic, connectionSearchText(article)]);
       return result.rows;
     },
     async connectionCandidates(article) {
