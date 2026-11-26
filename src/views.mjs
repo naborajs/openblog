@@ -96,9 +96,9 @@ function newsTopic(article) {
   const topic = String(article.topic ?? '').trim();
   if (topic && !/^(news|news analysis|general news)$/i.test(topic)) return topic;
   const text = `${article.title ?? ''} ${article.summary ?? ''}`.toLocaleLowerCase('en');
-  if (/\b(acquisition|acquisitions|merger|mergers|earnings|revenue|business|markets?)\b/.test(text)) return 'Business';
-  if (/\b(election|parliament|president|prime minister|diplomacy|ceasefire|sanctions|government)\b/.test(text)) return 'World';
   if (/\b(cyber|security|malware|malvertising|cve[- ]|breach|vulnerabilit|firewall|pan-os|critical infrastructure|data leak|data exposure|attacks?)\b/.test(text)) return 'Technology & security';
+  if (/\b(acquisition|acquisitions|merger|mergers|earnings|revenue|stock market|market shares?)\b/.test(text)) return 'Business';
+  if (/\b(election|parliament|president|prime minister|diplomacy|ceasefire|sanctions|government)\b/.test(text)) return 'World';
   return 'Latest';
 }
 function newsTopicId(topic) {
