@@ -58,7 +58,17 @@ try {
     await page.locator('.news-feature').waitFor();
     assert.equal(await page.locator('.news-headlines .news-brief').count(), 2);
     assert.equal(await page.locator('.news-topic-nav a').first().getAttribute('href'), '#latest-stories');
-    for (const image of await page.locator('.news-front .cover img').all()) {
+    assert.equal((await page.locator('.news-topic-nav a').allTextContents()).includes('News Analysis'), false);
+    const featureBox = await page.locator('.news-feature').boundingBox();
+    const headlinesBox = await page.locator('.news-headlines').boundingBox();
+    if (width <= 1088) assert(headlinesBox.y > featureBox.y, `${name}: latest headlines should follow the feature`);
+    else assert(Math.abs(headlinesBox.y - featureBox.y) < 16, `${name}: desktop headlines should align beside the feature`);
+    const brief = page.locator('.news-brief').first();
+    const briefMedia = await brief.locator('.news-brief-cover').boundingBox();
+    const briefCopy = await brief.locator('.news-brief-copy').boundingBox();
+    assert(briefMedia.x + briefMedia.width <= briefCopy.x + 1 || briefMedia.y + briefMedia.height <= briefCopy.y + 1,
+      `${name}: brief media must appear before its copy in reading order`);
+    for (const image of await page.locator('.news-front .cover img, .news-card .cover img').all()) {
       await image.scrollIntoViewIfNeeded();
       await image.evaluate((element) => element.decode());
       assert(await image.evaluate((element) => element.naturalWidth > 0));
