@@ -139,13 +139,15 @@ test('news front page groups topical stories, credits photos, and suppresses exa
     { ...lead, slug: 'duplicate-security-advisory' },
     photo('business-update', 'A company announces an acquisition', 'The company confirmed an acquisition agreement with a closing date.'),
     photo('world-update', 'Parliament announces a new vote', 'Lawmakers announced a vote for next week.'),
-    photo('security-follow-up', 'Researchers publish new security findings', 'Researchers documented a separate software vulnerability.'),
+    photo('security-follow-up', 'Researchers publish security findings about Meta Business accounts',
+      'A malvertising campaign targeted Meta Business accounts and exposed a separate vulnerability.'),
   ], { page: 1, more: false });
 
   assert.equal((html.match(/Security advisory confirms an exploited vulnerability/g) ?? []).length, 1);
   assert.match(html, /aria-label="News topics"/);
   assert.match(html, /href="#news-topic-technology-security"/);
   assert.match(html, /id="news-topic-technology-security"/);
+  assert.match(html, /news-card-copy.*?<span>Technology &amp; security<\/span>/s);
   assert.match(html, /Business/);
   assert.match(html, /class="image-credit"/);
   assert.match(html, /Photo by/);
