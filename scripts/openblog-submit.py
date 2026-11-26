@@ -168,7 +168,7 @@ def commons_cover(filename, alt, slug, title):
         raise ValueError("recorded license does not match the Commons file page")
     normalized_license = commons_license.casefold().replace("-", " ")
     if not (normalized_license in {"cc0", "public domain"}
-            or (normalized_license.startswith("cc by ") and not any(term in normalized_license for term in ("sa", "nc", "nd")))):
+            or normalized_license in {"cc by 2.0", "cc by 2.5", "cc by 3.0", "cc by 4.0"}):
         raise ValueError("only CC0, public-domain, or attribution-only CC BY cover photos are enabled")
     if commons_license_url.startswith("http://"):
         commons_license_url = "https://" + commons_license_url[len("http://"):]
