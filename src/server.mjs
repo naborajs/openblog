@@ -5,7 +5,7 @@ import { isIP } from 'node:net';
 import { extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAuth } from './auth.mjs';
-import { articleInput, isId, isSlug, RequestError, text } from './content.mjs';
+import { agentCoverInput, articleInput, isId, isSlug, RequestError, text } from './content.mjs';
 import { sections } from './demo.mjs';
 import { createStore } from './store.mjs';
 import { accountPage, articleView, blogIndex, draftPage, escape, feedbackForm, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
@@ -150,6 +150,7 @@ function information(path, contactEmail, feedbackSubmitted = false, feedbackEnab
       `<h2>Read public articles</h2><ul><li><code>GET /api/v1/articles</code> lists published articles. Optional parameters are <code>section</code>, <code>topic</code>, <code>q</code>, <code>page</code>, and <code>limit</code>.</li>
       <li><code>GET /api/v1/articles/{slug}</code> returns the article, source links, and canonical URL.</li>
       <li><code>GET /api/v1/articles/{slug}/connections</code> returns published articles connected by explicit links, shared topics, or relevant terms. The list is calculated from the current publication, so newly published articles can connect to older work without editing it.</li>
+      <li><code>POST /api/v1/articles/{slug}/cover</code> replaces only a published article’s first-party photo, alt text, and public attribution. It requires the individually approved editorial key.</li>
       <li><code>GET /articles/{slug}/markdown</code> serves the public article in Markdown. <a href="/feed.xml">RSS</a> lists recent publications.</li></ul>
       <h2>Submit a draft</h2><p>Sign in and create an agent key in <a href="/account">your workspace</a>. Keep the key in your agent's secret storage. New keys are draft-only. Publishing permission is not available through this public API; the site administrator must approve a specific key in the database.</p>
       <pre><code>POST /api/v1/drafts
@@ -169,13 +170,33 @@ Idempotency-Key: a-stable-job-id
 Authorization: Bearer YOUR_APPROVED_AGENT_KEY
 Content-Type: application/json
 
-{}</code></pre><p>Publishing is idempotent: retrying a successful request returns the same article. A published article becomes available through the website and public read API on the next request. This gate cannot guarantee factual accuracy or image-license compliance by itself; the trusted research helper also checks the private image-rights record, and editors can correct published work.</p>`],
+{}</code></pre><p>Publishing is idempotent: retrying a successful request returns the same article. A published article becomes available through the website and public read API on the next request. This gate cannot guarantee factual accuracy or image-license compliance by itself; the trusted research helper also checks the private image-rights record, and editors can correct published work.</p>
+      <h2>Replace a published photo</h2><p>An individually approved editorial key may update only <code>cover_url</code>, <code>cover_alt</code>, and the structured photo attribution on an existing published article. It cannot use this endpoint to edit article text, sources, byline, section, or publication date. The trusted VPS helper verifies the Wikimedia file page, supported license, real JPEG bytes, visual-review note, and SHA-256 before it calls this route. Keep the original file and rights record in the private Hermes profile.</p>
+      <pre><code>POST /api/v1/articles/ARTICLE_SLUG/cover
+Authorization: Bearer YOUR_APPROVED_AGENT_KEY
+Content-Type: application/json
+
+{
+  "cover_url": "https://blog.naborajs.me/media/covers/commons-SHA256-cover.jpg",
+  "cover_alt": "A concise, literal description of the photograph.",
+  "cover_credit": {
+    "provider": "Wikimedia Commons",
+    "creator": "Photographer name",
+    "license": "CC BY 4.0",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "sha256": "SHA256",
+    "media_type": "photograph",
+    "visual_review": "A short note describing the actual photo after inspection.",
+    "relevance": "A short note explaining its specific connection to this article."
+  }
+}</code></pre><p>Cover updates are limited to eight requests per minute. The image credit appears beneath the published cover and its source details are available in the read API.</p>`],
   };
   const data = pages[path];
   return data ? { title: data[0], description: data[1], content: plainPage(...data) } : null;
 }
 
-export function createApp({ store, auth, origin, contactEmail = '' }) {
+export function createApp({ store, auth, origin, coverOrigin = origin, contactEmail = '' }) {
   const limits = new Map();
   function rateLimit(req, group, limit) {
     const now = Date.now();
@@ -334,6 +355,22 @@ export function createApp({ store, auth, origin, contactEmail = '' }) {
         res.setHeader('Cache-Control', 'private, no-store');
         rateLimit(request, method === 'POST' ? 'agent-write' : 'agent-read', method === 'POST' ? 40 : 300);
         const readMethod = method === 'GET' || method === 'HEAD';
+        const coverMatch = /^\/api\/v1\/articles\/([a-z0-9-]+)\/cover$/.exec(path);
+        if (coverMatch) {
+          if (method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            throw new RequestError(405, 'Use POST to submit a verified cover update.');
+          }
+          if (store.demo) throw new RequestError(503, 'Cover updates require a Supabase connection.');
+          rateLimit(request, 'agent-cover-write', 8);
+          const key = agentKey.exec(request.headers.authorization || '')?.[1];
+          if (!key) throw new RequestError(401, 'Provide an active agent key.');
+          if (!isSlug(coverMatch[1])) throw new RequestError(400, 'Provide a valid published article slug.');
+          const update = agentCoverInput(await readBody(request, 'application/json'), coverOrigin);
+          const result = await store.updateAgentCover(key, coverMatch[1], update);
+          if (!result) throw new RequestError(403, 'This key is not approved to update published covers, or the article does not exist.');
+          return json(res, 200, { status: 'updated', ...result });
+        }
         if (readMethod && path === '/api/v1/articles') {
           const filters = readFilters(url);
           const limit = numberParam(url, 'limit', 24, 1, 100);
