@@ -9,7 +9,7 @@ import { definitionTopic, topicMatches } from '../src/connections.mjs';
 import { agentCoverInput, articleInput } from '../src/content.mjs';
 import { createApp } from '../src/server.mjs';
 import { createStore } from '../src/store.mjs';
-import { markdown } from '../src/views.mjs';
+import { markdown, newsIndex } from '../src/views.mjs';
 
 const alice = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: 'alice@example.test' };
 const ed = { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', email: 'editor@example.test' };
@@ -64,6 +64,17 @@ test('article validation and HTML rendering reject unsafe input', () => {
     cover_alt: 'A technician tests a network switch in a lab.', cover_credit: coverCredit(digest),
   }, 'https://blog.naborajs.me');
   assert.equal(verifiedCover.cover_credit.sha256, digest);
+  const verifiedCcBy25Cover = agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A technician tests a network switch in a lab.',
+    cover_credit: { ...coverCredit(digest), license: 'CC BY 2.5', license_url: 'https://creativecommons.org/licenses/by/2.5' },
+  }, 'https://blog.naborajs.me');
+  assert.equal(verifiedCcBy25Cover.cover_credit.license, 'CC BY 2.5');
+  assert.throws(() => agentCoverInput({
+    cover_url: `https://blog.naborajs.me/media/covers/commons-${digest}-cover.jpg`,
+    cover_alt: 'A technician tests a network switch in a lab.',
+    cover_credit: { ...coverCredit(digest), license: 'CC BY-SA 4.0', license_url: 'https://creativecommons.org/licenses/by-sa/4.0/' },
+  }, 'https://blog.naborajs.me'), /CC BY, CC0, or public-domain/);
   const cc0CoverCredit = {
     ...coverCredit(digest),
     license: 'CC0',
@@ -112,6 +123,32 @@ test('article validation and HTML rendering reject unsafe input', () => {
   assert.equal(definitionTopic("Why I Don't Use WordPress for My Personal Site"), 'WordPress');
   assert.equal(topicMatches('C++ helps here, but C+++ is a different token.', 'C++'), true);
   assert.equal(topicMatches('SupabaseX is not the same token.', 'Supabase'), false);
+});
+
+test('news front page groups topical stories, credits photos, and suppresses exact duplicates', () => {
+  const photo = (slug, title, summary, topic = 'News Analysis') => ({
+    slug, title, summary, section: 'news', topic, published_at: '2026-11-27T00:00:00.000Z',
+    cover_url: 'https://blog.naborajs.me/media/covers/commons-' + 'a'.repeat(64) + '-cover.jpg',
+    cover_alt: 'A real photograph of a network security appliance in a laboratory.',
+    cover_credit: coverCredit('a'.repeat(64)),
+  });
+  const lead = photo('security-advisory', 'Security advisory confirms an exploited vulnerability',
+    'A security vendor confirms an actively exploited vulnerability in a network appliance.');
+  const html = newsIndex([
+    lead,
+    { ...lead, slug: 'duplicate-security-advisory' },
+    photo('business-update', 'A company announces an acquisition', 'The company confirmed an acquisition agreement with a closing date.'),
+    photo('world-update', 'Parliament announces a new vote', 'Lawmakers announced a vote for next week.'),
+    photo('security-follow-up', 'Researchers publish new security findings', 'Researchers documented a separate software vulnerability.'),
+  ], { page: 1, more: false });
+
+  assert.equal((html.match(/Security advisory confirms an exploited vulnerability/g) ?? []).length, 1);
+  assert.match(html, /aria-label="News topics"/);
+  assert.match(html, /href="#news-topic-technology-security"/);
+  assert.match(html, /id="news-topic-technology-security"/);
+  assert.match(html, /Business/);
+  assert.match(html, /class="image-credit"/);
+  assert.match(html, /Photo by/);
 });
 
 test('demo serves pages, media, and the public API without writing data', async () => {
@@ -174,6 +211,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
   await db.exec(await readFile(new URL('../supabase/migrations/202611260002_require_verified_commons_covers.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260003_verified_agent_cover_updates.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/202611260004_accept_cc0_deed_urls.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/202611270001_accept_cc_by_25.sql', import.meta.url), 'utf8'));
   for (const actor of actors) await db.query('insert into auth.users values ($1)', [actor.id]);
   const pool = {
     query: (...args) => db.query(...args),
@@ -325,6 +363,22 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.equal(cc0Readback.body, strictSample.body, 'CC0 cover metadata cannot edit article text');
     const cc0Article = await (await fetch(base + '/articles/' + validAuto.slug)).text();
     assert.match(cc0Article, /href="https:\/\/creativecommons\.org\/publicdomain\/zero\/1\.0\/deed\.en"/);
+    const ccBy25Digest = 'd'.repeat(64);
+    const ccBy25CoverUpdate = {
+      cover_url: 'https://blog.naborajs.me/media/covers/commons-' + ccBy25Digest + '-cover.jpg',
+      cover_alt: 'A technician tests a network switch in a lab.',
+      cover_credit: {
+        ...coverCredit(ccBy25Digest), license: 'CC BY 2.5',
+        license_url: 'https://creativecommons.org/licenses/by/2.5',
+      },
+    };
+    const ccBy25CoverSaved = await sendCoverUpdate(approvedKey, ccBy25CoverUpdate);
+    assert.equal(ccBy25CoverSaved.status, 200, 'the approved route accepts CC BY 2.5 with attribution');
+    const ccBy25Readback = await (await fetch(base + '/api/v1/articles/' + validAuto.slug)).json();
+    assert.equal(ccBy25Readback.cover_credit.license, 'CC BY 2.5');
+    assert.equal(ccBy25Readback.cover_credit.sha256, ccBy25Digest);
+    const ccBy25Article = await (await fetch(base + '/articles/' + validAuto.slug)).text();
+    assert.match(ccBy25Article, /href="https:\/\/creativecommons\.org\/licenses\/by\/2\.5"/);
     const retryPublish = await (await autoPublishRequest()).json();
     assert.equal(retryPublish.published_at, publication.published_at);
     assert.equal((await form('/account/drafts/' + draft.id + '/publish', sample, alice)).status, 403);
