@@ -272,7 +272,7 @@ test('Supabase schema isolates drafts and agent keys through the HTTP publishing
     assert.match(await (await fetch(base + '/robots.txt')).text(), /User-agent: OAI-SearchBot\nAllow: \//);
     assert.match(await (await fetch(base + '/sitemap.xml')).text(), new RegExp(draft.slug));
     const publicPath = '/articles/' + draft.slug;
-    const topic = { ...sample, title: 'What is Supabase?' };
+    const topic = { ...sample, title: 'What is Supabase?', topic: 'Database' };
     const targetDraft = await form('/account/drafts/new', topic, alice);
     const targetPath = targetDraft.headers.get('location');
     assert.match(targetPath, /^\/account\/drafts\//);
