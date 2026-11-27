@@ -175,6 +175,7 @@ test('demo serves pages, media, and the public API without writing data', async 
     }
     const blogResponse = await fetch(base + '/blogs');
     assert.equal(blogResponse.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+    assert.equal(blogResponse.headers.get('strict-transport-security'), 'max-age=31536000');
     const blogs = await blogResponse.text();
     const news = await (await fetch(base + '/news')).text();
     assert.match(blogs, /class="blog-archive"/);
