@@ -73,6 +73,11 @@ try {
       await image.evaluate((element) => element.decode());
       assert(await image.evaluate((element) => element.naturalWidth > 0));
     }
+    assert.equal(
+      await page.locator('.news-front .image-credit, .news-card .image-credit').count(),
+      await page.locator('.news-front .cover img[src*="/media/covers/commons-"], .news-card .cover img[src*="/media/covers/commons-"]').count(),
+      `${name}: every Commons newsroom photo must show its attribution`,
+    );
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await capture('news');
