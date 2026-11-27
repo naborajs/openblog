@@ -151,6 +151,18 @@ test('news front page groups topical stories, credits photos, and suppresses exa
   assert.match(html, /Business/);
   assert.match(html, /class="image-credit"/);
   assert.match(html, /Photo by/);
+
+  const healthLead = photo('health-update', 'Public health agency reports an outbreak update',
+    'Officials describe the latest response to the outbreak.', 'Health');
+  const healthHtml = newsIndex([healthLead, lead,
+    photo('business-update', 'A company announces an acquisition', 'The company confirmed an acquisition agreement with a closing date.'),
+    photo('world-update', 'Parliament announces a new vote', 'Lawmakers announced a vote for next week.'),
+    photo('security-follow-up', 'Researchers publish security findings about Meta Business accounts',
+      'A malvertising campaign targeted Meta Business accounts and exposed a separate vulnerability.'),
+  ], { page: 1, more: false });
+  assert.match(healthHtml, /href="#news-topic-health"/);
+  assert.match(healthHtml, /id="news-topic-health"/);
+  assert.match(healthHtml, /id="news-topic-health-title">Health<\/h2>/);
 });
 
 test('demo serves pages, media, and the public API without writing data', async () => {
