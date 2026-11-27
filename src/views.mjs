@@ -186,13 +186,18 @@ export function newsIndex(articles, pagination) {
   });
   const [lead, ...rest] = unique;
   const headlines = rest.slice(0, 2);
-  const groups = new Map();
-  for (const article of rest.slice(2)) {
+  const allGroups = new Map();
+  for (const article of unique) {
     const topic = newsTopic(article);
     if (topic === 'Latest') continue;
-    if (!groups.has(topic)) groups.set(topic, []);
-    groups.get(topic).push(article);
+    if (!allGroups.has(topic)) allGroups.set(topic, []);
+    allGroups.get(topic).push(article);
   }
+  const frontRows = new Set([lead, ...headlines].filter(Boolean));
+  const groups = new Map([...allGroups].map(([topic, items]) => {
+    const remaining = items.filter((article) => !frontRows.has(article));
+    return [topic, remaining.length ? remaining : [items[0]]];
+  }));
   const topics = [...groups.keys()];
   const topicNav = topics.length ? `<nav class="news-topic-nav" aria-label="News topics"><a href="#latest-stories">Latest</a>
     ${topics.map((topic) => `<a href="#${e(newsTopicId(topic))}">${e(topic)}</a>`).join('')}</nav>`
