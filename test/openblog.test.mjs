@@ -177,16 +177,28 @@ test('demo serves pages, media, and the public API without writing data', async 
     assert.equal(blogResponse.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
     assert.equal(blogResponse.headers.get('strict-transport-security'), 'max-age=31536000');
     const blogs = await blogResponse.text();
+    const explore = await (await fetch(base + '/')).text();
     const news = await (await fetch(base + '/news')).text();
+    const agentGuide = await (await fetch(base + '/api')).text();
+    assert.match(explore, /Stories that make the world easier to understand/);
+    assert.match(explore, /aria-label="Explore article sections and agent access"/);
+    for (const path of ['/news', '/teaching', '/find-out', '/api']) assert.match(explore, new RegExp(`href="${path}"`));
     assert.match(blogs, /class="blog-archive"/);
+    assert.match(blogs, /<details class="browse-dropdown">/);
+    assert.match(blogs, /href="\/teaching"/);
+    assert.match(blogs, /href="\/find-out"/);
     assert.doesNotMatch(blogs, /How to read a technology release/);
     assert.match(news, /class="news-headlines"/);
     assert.doesNotMatch(news, /What happens when you open a website/);
+    assert.match(agentGuide, /class="agent-guide"/);
+    assert.match(agentGuide, /Discover connected reading/);
+    assert.match(agentGuide, /Publishing stays separately controlled/);
     assert.match((await fetch(base + '/mark.svg')).headers.get('content-type'), /image\/svg/);
     const article = await (await fetch(base + '/articles/what-happens-when-you-open-a-website')).text();
     assert.match(article, /VideoObject/);
     assert.match(article, /Related reading/);
     assert.match(article, /class="mobile-toc"/);
+    assert.match(article, /class="connection-card"/);
     assert.doesNotMatch(article, /<details class="mobile-toc"/);
     assert.match(article, /Published [^<]+ IST/);
     assert.match(article, /datetime="2026-11-24T10:00:00\.000Z"/);
@@ -205,6 +217,7 @@ test('demo serves pages, media, and the public API without writing data', async 
     assert.ok(Array.isArray(connections.connections));
     assert.match(connections.generated_at, /^\d{4}-\d\d-/);
     assert.ok(connections.connections.length > 0);
+    assert(connections.connections.some((connection) => connection.cover_url?.startsWith('http://localhost:')));
     for (const connection of connections.connections) {
       assert.equal((await fetch(base + new URL(connection.url).pathname)).status, 200, connection.url);
       assert.match(connection.url, /^http:\/\/localhost:\d+\/articles\//);
