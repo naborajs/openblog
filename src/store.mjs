@@ -91,7 +91,7 @@ export function createStore(databaseUrl, existingPool) {
         (item.topic === article.topic || article.related_slugs?.includes(item.slug) || item.related_slugs?.includes(article.slug))).slice(0, 5);
       const result = await pool.query(
         `with matches as (
-           select slug, title, section, topic, summary,
+           select slug, title, section, topic, summary, cover_url, cover_alt, cover_credit,
              slug = any($2::text[]) as links_from_here,
              $1 = any(related_slugs) as links_here,
              topic <> '' and topic = $3 as same_topic,
@@ -102,7 +102,7 @@ export function createStore(databaseUrl, existingPool) {
            from blog.posts
            where status = 'published' and slug <> $1
          )
-         select slug, title, section, topic, summary,
+         select slug, title, section, topic, summary, cover_url, cover_alt, cover_credit,
            case when links_from_here then 'Linked from this article'
                 when links_here then 'Links to this article'
                 when same_topic then 'Same topic'
