@@ -17,6 +17,7 @@ try {
         hasTouch: name === 'mobile', isMobile: name === 'mobile',
       });
     const page = await context.newPage();
+    const navigate = (target) => page.goto(target, { waitUntil: 'domcontentloaded' });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     const capture = async (stop, fullPage = false) => {
@@ -24,15 +25,20 @@ try {
       if (name === 'mobile' && !compactStops.has(stop)) return;
       if (name === 'tablet' && !compactStops.has(stop)) return;
       if (name === 'desktop' && !desktopStops.has(stop)) return;
+        if (stop === 'home') {
+          await page.locator('.home-hero-art img').evaluate((img) => img.decode());
+          await page.locator('.home-feature-card .cover img').evaluateAll((images) => Promise.all(images.map((img) => img.decode())));
+        }
         if (fullPage) await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
         const activeTheme = await page.evaluate(() => document.documentElement.dataset.theme ||
           (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-        await page.screenshot({ path: join(screenshots, `${name}-${stop}-${activeTheme}.png`), fullPage, animations: 'disabled' });
+        const captureFullPage = fullPage && !(name === 'mobile' && stop === 'api');
+        await page.screenshot({ path: join(screenshots, `${name}-${stop}-${activeTheme}.png`), fullPage: captureFullPage, animations: 'disabled' });
     };
 
-    assert.equal((await page.goto(url)).status(), 200);
+    assert.equal((await navigate(url)).status(), 200);
     await page.locator('h1').waitFor();
-    assert.match(await page.locator('h1').textContent(), /Stories that make the world easier to understand/);
+    assert.match(await page.locator('h1').textContent(), /News to follow\. Ideas to understand\./);
     const header = page.getByRole('banner');
     assert.deepEqual(await header.locator('.top-links a').allTextContents(), ['Explore', 'News', 'Blog', 'Connective AI agent']);
     assert.equal(await page.locator('.sidebar, #explore-menu').count(), 0);
@@ -47,12 +53,22 @@ try {
       const bar = link.closest('.topbar-inner').getBoundingClientRect();
       return link.getBoundingClientRect().right > bar.left + bar.width * .6;
     }));
-    const leadCover = page.locator('.explore-lead-cover img');
-    if (await leadCover.count()) {
-      await leadCover.evaluate((img) => img.decode());
-      assert(await leadCover.evaluate((img) => img.naturalWidth > 0));
-      assert((await leadCover.getAttribute('alt'))?.length > 0);
-    } else assert(await page.locator('.explore-lead .cover-placeholder').count());
+    const earthArt = page.locator('.home-hero-art img');
+    assert.equal(await earthArt.getAttribute('alt'), '');
+    assert.equal(await earthArt.getAttribute('fetchpriority'), 'high');
+    await earthArt.evaluate((img) => img.decode());
+    assert(await earthArt.evaluate((img) => img.naturalWidth === 1600));
+    assert.equal(await page.locator('.home-feature-grid > article').count(), 2);
+    assert(await page.locator('.home-news-button').getAttribute('href') === '/news');
+    assert(await page.locator('.home-blog-button').getAttribute('href') === '/blogs');
+    assert(await page.locator('.home-agent-link').getAttribute('href') === '/api');
+    assert.match(await page.locator('.home-freshness').textContent(), /Latest news|latest news will appear/i);
+    for (const image of await page.locator('.home-feature-card .cover img').all()) {
+      await image.evaluate((element) => element.decode());
+      assert(await image.evaluate((element) => element.naturalWidth > 0));
+      assert((await image.getAttribute('alt'))?.length > 0);
+    }
+    assert.match(await page.locator('.home-art-note').innerText(), /not a live satellite image/);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await capture('home', true);
 
@@ -185,7 +201,7 @@ try {
       assert.match(await page.locator('#reader-feedback').textContent(), /available when OpenBlog is connected to its database/);
       await capture('article-feedback');
     } else {
-      const articleResponse = await page.goto(new URL(currentNewsArticle, url).href);
+      const articleResponse = await navigate(new URL(currentNewsArticle, url).href);
       assert.equal(articleResponse.status(), 200);
       await page.locator('.prose').waitFor();
       assert((await page.locator('h1').innerText()).trim().length > 0);
@@ -202,15 +218,15 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await capture('article-dark', name === 'desktop');
     if (name !== 'tablet') {
-      await page.goto(url);
-      await page.locator('.explore-hero').waitFor();
+      await navigate(url);
+      await page.locator('.home-hero').waitFor();
       await capture('home', true);
-      await page.goto(url + '/api');
+      await navigate(url + '/api');
       await page.locator('.agent-guide').waitFor();
       await capture('api', true);
     }
     for (const route of ['about', 'policy', 'privacy', 'disclaimer', 'contact']) {
-      assert.equal((await page.goto(url + '/' + route)).status(), 200, route);
+      assert.equal((await navigate(url + '/' + route)).status(), 200, route);
       await page.locator('h1').waitFor();
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), route + ' overflowed');
       if (['about', 'policy', 'privacy'].includes(route)) await capture(route);
@@ -222,12 +238,13 @@ try {
 
   const context = await browser.newContext({ viewport: { width: 320, height: 720 }, reducedMotion: 'reduce' });
   const page = await context.newPage();
-  await page.goto(url);
+  const navigate = (target) => page.goto(target, { waitUntil: 'domcontentloaded' });
+  await navigate(url);
   assert.equal(await page.locator('html').evaluate((element) => element.classList.contains('motion')), false);
-  assert.equal(await page.locator('.explore-hero-copy').evaluate((element) => getComputedStyle(element).animationName), 'none');
-  assert.equal(await page.locator('.explore-lead-cover img').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await page.locator('.home-hero-copy').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await page.locator('.home-hero-art img').evaluate((element) => getComputedStyle(element).animationName), 'none');
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.goto(url + '/blogs');
+  await navigate(url + '/blogs');
   const reducedDisclosure = page.locator('.browse-dropdown');
   await reducedDisclosure.locator('summary').click();
   assert.equal(await reducedDisclosure.locator('.browse-dropdown-panel').evaluate((element) => getComputedStyle(element).animationName), 'none');
