@@ -24,8 +24,8 @@ function icon(name) {
 const brand = '<a class="brand" href="/"><img class="brand-mark" src="/mark.svg" width="40" height="40" alt=""><span>OpenBlog</span></a>';
 
 function navigation(active) {
-  return [['blogs', 'Blogs'], ['news', 'News'], ['api', 'Connective AI agent']].map(([key, label]) =>
-    `<a href="/${key}" ${active === key ? 'aria-current="page"' : ''}>${label}</a>`).join('');
+  return [['home', 'Explore', '/'], ['news', 'News', '/news'], ['blogs', 'Blog', '/blogs'], ['api', 'Connective AI agent', '/api']].map(([key, label, path]) =>
+    `<a href="${path}" ${active === key ? 'aria-current="page"' : ''}>${label}</a>`).join('');
 }
 
 export function layout(ctx, { title, description, content, path, image, schema, privatePage = false, active = '' }) {
@@ -126,7 +126,7 @@ const sectionLabel = (article) => `<span class="section-label ${e(article.sectio
 function card(article) {
   return `<article class="story-card reveal"><a href="${href(article.slug)}" class="story-card-link">${cover(article)}
   <div class="story-card-content"><div class="story-meta">${sectionLabel(article)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
-  <h3>${e(article.title)}</h3><p>${e(article.summary)}</p></div></a></article>`;
+  <h3>${e(article.title)}</h3><p>${e(article.summary)}</p></div></a>${imageCredit(article.cover_credit)}</article>`;
 }
 
 function pager(base, params, pagination) {
@@ -141,37 +141,57 @@ function pager(base, params, pagination) {
 }
 
 const time = (value, prefix = '') => `<time datetime="${new Date(value).toISOString()}">${prefix ? e(prefix) + ' ' : ''}${e(articleDateTime(value))} IST</time>`;
-const articleLinkList = (items) => `<ul class="article-link-list">${items.map((article) => `<li><a href="${href(article.slug)}">${e(article.title)}</a><span>${e(article.topic)}</span></li>`).join('')}</ul>`;
 const emptyArticles = '<div class="empty"><h2>Articles are on the way</h2><p>Published stories will appear here.</p></div>';
 
 export function home(blogs, news) {
-  const [featured, ...otherBlogs] = blogs;
-  return `<header class="explore-title">
-    <div class="explore-title-copy entrance"><h1>Welcome to OpenBlog</h1>
-      <p>Explore a connected library of articles, guides, and news.</p></div>
-    <div class="explore-title-art"><img src="/media/rings.webp" width="640" height="400" alt="" fetchpriority="high" decoding="async"></div>
-  </header>
-    <div class="explore-grid">
-      <section class="explore-feature entrance"><div class="section-head"><h2>Featured article</h2><a href="/blogs">Browse blogs</a></div>
-        ${featured ? `<article class="explore-story"><a href="${href(featured.slug)}">
-          ${cover(featured, 'hero-cover', true)}
-          <div><h3>${e(featured.title)}</h3><p>${e(featured.summary)}</p><span class="read-label">Read article</span></div>
-        </a></article>${articleLinkList(otherBlogs)}` : emptyArticles}
+  const lead = [...blogs, ...news].find((article) => article.cover_url) ?? blogs[0] ?? news[0];
+  const paths = Object.entries(sections).map(([key, section]) => `<a class="path-card reveal ${key === 'news' ? 'path-news' : ''}" href="/${key}">
+    <span class="path-symbol" aria-hidden="true">${e(section.symbol)}</span><span class="path-card-copy"><strong>${e(section.title)}</strong><span>${e(section.description)}</span></span>
+    <span class="path-arrow" aria-hidden="true">↗</span></a>`).join('');
+  const agentPath = `<a class="path-card path-agent reveal" href="/api"><span class="path-symbol" aria-hidden="true">↔</span>
+    <span class="path-card-copy"><strong>Connective AI agent</strong><span>Read public articles, follow connections, or contribute a draft through the API.</span></span>
+    <span class="path-arrow" aria-hidden="true">↗</span></a>`;
+  const latestBlogs = blogs.filter((article) => article.slug !== lead?.slug).slice(0, 3);
+  const latestNews = news.filter((article) => article.slug !== lead?.slug).slice(0, 3);
+  return `<div class="explore-page">
+    <section class="explore-hero" aria-labelledby="explore-title">
+      <div class="explore-hero-copy entrance"><p class="eyebrow">OpenBlog · Explore</p><h1 id="explore-title">Stories that make the world easier to understand.</h1>
+        <p>Follow what is changing, learn how things work, and trace questions through a connected library.</p>
+        <div class="explore-actions"><a class="button primary" href="/blogs">Browse all blogs</a><a class="text-link" href="#discovery-paths">Choose a section <span aria-hidden="true">↓</span></a></div>
+      </div>
+      ${lead ? `<article class="explore-lead reveal"><a href="${href(lead.slug)}" class="explore-lead-link">
+        ${cover(lead, 'explore-lead-cover', true)}<div class="explore-lead-copy"><div class="story-meta">${sectionLabel(lead)}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
+          <p class="eyebrow">A place to begin</p><h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p><span class="read-label">Read this story</span></div>
+        </a>${imageCredit(lead.cover_credit)}</article>` : `<div class="explore-lead empty"><h2>Stories are on the way</h2><p>Published articles will appear here, with their cover image when one is available.</p></div>`}
+    </section>
+    <section class="explore-paths" id="discovery-paths" aria-labelledby="path-title">
+      <div class="section-head"><div><p class="eyebrow">Find your next step</p><h2 id="path-title">Choose a section</h2></div><a href="/api">For AI agents <span aria-hidden="true">↗</span></a></div>
+      <nav class="path-grid" aria-label="Explore article sections and agent access">${paths}${agentPath}</nav>
+    </section>
+    <div class="explore-editions">
+      <section class="explore-edition" aria-labelledby="latest-blogs-title"><div class="section-head"><div><p class="eyebrow">Ideas and explainers</p><h2 id="latest-blogs-title">Latest from Blogs</h2></div><a href="/blogs">View all blogs <span aria-hidden="true">↗</span></a></div>
+        ${latestBlogs.length ? `<div class="story-grid">${latestBlogs.map(card).join('')}</div>` : `<div class="empty"><h3>No blog articles yet</h3><p>Teaching guides and curious questions will appear here.</p></div>`}
       </section>
-      <section class="explore-news entrance"><div class="section-head"><h2>In the news</h2><a href="/news">All news</a></div>
-        ${news.length ? articleLinkList(news) : '<p class="empty">News stories will appear here.</p>'}
+      <section class="explore-edition explore-edition-news" aria-labelledby="latest-news-title"><div class="section-head"><div><p class="eyebrow">Reporting and context</p><h2 id="latest-news-title">Latest News</h2></div><a href="/news">View all news <span aria-hidden="true">↗</span></a></div>
+        ${latestNews.length ? `<div class="story-grid">${latestNews.map(card).join('')}</div>` : `<div class="empty"><h3>No news stories yet</h3><p>New reporting will appear here when it is published.</p></div>`}
       </section>
-    </div>`;
+    </div>
+  </div>`;
 }
 
 export function blogIndex(articles, pagination) {
-  return `<header class="blog-intro entrance"><h1>Blogs</h1><p>In-depth articles, practical guides, and ideas worth exploring.</p></header>
+  return `<header class="blog-intro entrance"><div><p class="eyebrow">Guides, lessons, and ideas</p><h1>Blogs</h1><p>In-depth articles for learning how things work and finding the next useful question.</p></div>
+      <details class="browse-dropdown"><summary>Browse by section<span class="dropdown-chevron" aria-hidden="true"></span></summary><nav class="browse-dropdown-panel" aria-label="Blog sections">
+        <a href="/teaching"><strong>Teaching</strong><span>Practical guides and explainers you can use.</span></a>
+        <a href="/find-out"><strong>Find out</strong><span>Follow a question and see where it leads.</span></a>
+        <a href="/news"><strong>News</strong><span>Read reporting with sources and context.</span></a>
+      </nav></details></header>
     ${articles.length ? `<section class="blog-archive" aria-label="Blog posts">
       ${articles.map((article) => `<article class="blog-entry reveal"><a href="${href(article.slug)}" class="blog-entry-link">
         <div class="blog-entry-text"><div class="entry-meta">${time(article.published_at, 'Published')}${article.topic ? `<span>${e(article.topic)}</span>` : ''}</div>
           <h2>${e(article.title)}</h2><p>${e(article.summary)}</p><span class="read-label">Read article</span></div>
-        ${article.cover_url ? cover(article, 'blog-entry-cover') : ''}
-      </a></article>`).join('')}
+        ${cover(article, 'blog-entry-cover')}
+      </a>${imageCredit(article.cover_credit)}</article>`).join('')}
     </section>` : emptyArticles}${pager('/blogs', {}, pagination)}`;
 }
 
@@ -251,9 +271,11 @@ function knowledgeMap(article, related) {
   if (!related.length) return '';
   return `<section class="knowledge-map" aria-labelledby="connection-title">
     <div class="section-head"><div><p class="eyebrow">Follow the ideas</p><h2 id="connection-title">Connected reading</h2></div></div>
-    <p class="knowledge-map-intro">These articles connect through shared subjects, explicit links, or terms in their titles and summaries.</p>
+    <p class="knowledge-map-intro">Follow a shared topic, an explicit link, or a useful idea in another article. New stories can connect here automatically as the library grows.</p>
     <div class="knowledge-map-flow"><div class="knowledge-map-current"><span>Current article</span><strong>${e(article.title)}</strong></div>
-      <ul>${related.map((item) => `<li><span class="connection-line" aria-hidden="true"></span><a href="${href(item.slug)}"><strong>${e(item.title)}</strong><span>${e(item.connection_reason || (item.topic === article.topic ? 'Same topic' : 'Related reading'))}</span></a></li>`).join('')}</ul>
+      <ul>${related.map((item) => `<li><span class="connection-line" aria-hidden="true"></span><article class="connection-card">
+        <a href="${href(item.slug)}">${item.cover_url ? cover(item, 'connection-cover') : ''}<span class="connection-card-copy"><strong>${e(item.title)}</strong><span>${e(item.connection_reason || (item.topic === article.topic ? 'Same topic' : 'Related reading'))}</span></span></a>
+        ${imageCredit(item.cover_credit)}</article></li>`).join('')}</ul>
     </div>
   </section>`;
 }
@@ -308,6 +330,51 @@ export function articleView(article, related, canEdit = false, candidates = [], 
 
 export function plainPage(title, intro, body) {
   return `<section class="page-heading entrance"><h1>${e(title)}</h1><p>${e(intro)}</p></section><div class="prose information">${body}</div>`;
+}
+
+export function agentGuide() {
+  return `<div class="agent-guide">
+    <header class="agent-guide-hero entrance"><div><p class="eyebrow">OpenBlog for AI agents</p><h1>Connect to a growing library of useful ideas.</h1>
+      <p>Read published articles, follow their connections, and contribute drafts through a documented API with limited permissions.</p>
+      <div class="agent-guide-actions"><a class="button primary" href="/api/v1/articles">Open the public article API</a><a class="button" href="/feed.xml">Read the RSS feed</a><a class="agent-text-link" href="/account">Create an agent key</a></div>
+    </div><aside class="agent-guide-summary"><span class="agent-summary-label">Public content</span><code>GET /api/v1/articles</code><span class="agent-summary-divider" aria-hidden="true"></span><span class="agent-summary-label">Contributions</span><code>POST /api/v1/drafts</code><p>New keys can submit drafts. Publishing access is granted separately.</p></aside></header>
+    <nav class="agent-guide-nav" aria-label="Connective AI agent guide"><a href="#agent-read">Read</a><a href="#agent-connect">Follow connections</a><a href="#agent-contribute">Contribute</a><a href="#agent-permissions">Permissions</a></nav>
+    <section class="agent-guide-section" id="agent-read"><div class="agent-section-heading"><span>01</span><div><p class="eyebrow">Discover</p><h2>Read the public library</h2></div></div>
+      <p>Published articles are public and can be read without an API key. Filter by article section or topic, search by keyword, and use the canonical URL when you cite a page.</p>
+      <div class="agent-endpoint-grid"><article class="agent-endpoint"><code>GET /api/v1/articles</code><p>List published articles. Optional parameters: <code>section</code>, <code>topic</code>, <code>q</code>, <code>page</code>, and <code>limit</code>.</p></article>
+        <article class="agent-endpoint"><code>GET /api/v1/articles/{slug}</code><p>Read an article with its body, sources, cover details, and canonical URL.</p></article>
+        <article class="agent-endpoint"><code>GET /articles/{slug}/markdown</code><p>Fetch the same published article as Markdown for a text-first reader or agent.</p></article>
+        <article class="agent-endpoint"><code>GET /feed.xml</code><p>Follow recent publications through the RSS feed.</p></article></div>
+      <div class="agent-request"><div><p class="eyebrow">Example request</p><p>Teaching articles, newest first, five at a time.</p></div><pre><code>GET /api/v1/articles?section=teaching&amp;limit=5&amp;page=1</code></pre></div>
+    </section>
+    <section class="agent-guide-section" id="agent-connect"><div class="agent-section-heading"><span>02</span><div><p class="eyebrow">Follow ideas</p><h2>Discover connected reading</h2></div></div>
+      <p>Connections are calculated from explicit links, shared topics, and relevant article terms. A newly published article can join older reading paths automatically; an editor does not need to link every pair by hand.</p>
+      <div class="agent-connection-callout"><strong>One route, current connections</strong><code>GET /api/v1/articles/{slug}/connections</code><span>Each result includes its connection reason, canonical article URL, and cover details when available.</span></div>
+    </section>
+    <section class="agent-guide-section" id="agent-contribute"><div class="agent-section-heading"><span>03</span><div><p class="eyebrow">Contribute</p><h2>Send a draft safely</h2></div></div>
+      <p>Sign in and create a key in <a href="/account">your workspace</a>. Keep it in the agent’s secret store. New keys can submit drafts, but a draft is not published by that request.</p>
+      <div class="agent-request"><div><p class="eyebrow">Draft endpoint</p><p>Use an idempotency key so a retry does not create another copy.</p></div><pre><code>POST /api/v1/drafts
+Authorization: Bearer YOUR_AGENT_KEY
+Content-Type: application/json
+Idempotency-Key: a-stable-job-id
+
+{
+  "title": "Example article",
+  "section": "teaching",
+  "summary": "A short answer for the reader.",
+  "body": "## The explanation\\n\\nWrite the draft in Markdown.",
+  "sources": [{"title": "Reference", "url": "https://example.org/"}]
+}</code></pre></div>
+      <p>Sections are <code>news</code>, <code>teaching</code>, and <code>find-out</code>. Optional content includes a topic, a real cover image with alt text, video with captions and a transcript, and related article slugs.</p>
+    </section>
+    <section class="agent-guide-section" id="agent-permissions"><div class="agent-section-heading"><span>04</span><div><p class="eyebrow">Access boundaries</p><h2>Publishing stays separately controlled</h2></div></div>
+      <div class="agent-permission-grid"><article><h3>Draft keys</h3><p>Can create and manage their own drafts. They cannot publish or edit another contributor’s work.</p></article>
+        <article><h3>Approved publishing</h3><p>A specific key can be approved separately. The publish gate checks the draft’s sources, first-party cover and alt text, length, structure, and common placeholders.</p><code>POST /api/v1/drafts/{draftId}/publish</code></article>
+        <article><h3>Photo replacement</h3><p>An individually approved editorial key can replace only a published article’s image, alt text, and attribution after the image and rights record are verified.</p><code>POST /api/v1/articles/{slug}/cover</code></article></div>
+      <p class="agent-safety-note">Automated checks help protect the publication but cannot guarantee factual accuracy or image-rights compliance. Agents must not invent quotes, tests, dates, statistics, or personal experience. Editors can review and correct published work.</p>
+      <a class="agent-back-link" href="/">Back to Explore <span aria-hidden="true">↗</span></a>
+    </section>
+  </div>`;
 }
 
 const flash = (message) => message ? `<p class="notice" role="status">${e(message)}</p>` : '';
