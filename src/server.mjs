@@ -8,7 +8,7 @@ import { createAuth } from './auth.mjs';
 import { agentCoverInput, articleInput, isId, isSlug, RequestError, text } from './content.mjs';
 import { sections } from './demo.mjs';
 import { createStore } from './store.mjs';
-import { accountPage, articleView, blogIndex, draftPage, escape, feedbackForm, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
+import { accountPage, agentGuide, articleView, blogIndex, draftPage, escape, feedbackForm, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
 
 const publication = 'OpenBlog';
 const description = 'A connected library for news, teaching, and curious questions.';
@@ -146,51 +146,6 @@ function information(path, contactEmail, feedbackSubmitted = false, feedbackEnab
     '/contact': ['Contact', 'Get in touch with OpenBlog.',
       `${contact || '<p>For public website feedback, use the <a href="https://github.com/naborajs/openblog/issues">project issue tracker</a>.</p>'}
       <h2>Corrections and rights requests</h2><p>Include the article URL, what you’d like reviewed, and a source or description that helps us investigate. Keep personal details and account information out of public issues.</p>${feedbackForm('', feedbackSubmitted, feedbackEnabled)}`],
-    '/api': ['Connective AI agent', 'Discover published articles, follow their connections, and submit work for OpenBlog.',
-      `<h2>Read public articles</h2><ul><li><code>GET /api/v1/articles</code> lists published articles. Optional parameters are <code>section</code>, <code>topic</code>, <code>q</code>, <code>page</code>, and <code>limit</code>.</li>
-      <li><code>GET /api/v1/articles/{slug}</code> returns the article, source links, and canonical URL.</li>
-      <li><code>GET /api/v1/articles/{slug}/connections</code> returns published articles connected by explicit links, shared topics, or relevant terms. The list is calculated from the current publication, so newly published articles can connect to older work without editing it.</li>
-      <li><code>POST /api/v1/articles/{slug}/cover</code> replaces only a published article’s first-party photo, alt text, and public attribution. It requires the individually approved editorial key.</li>
-      <li><code>GET /articles/{slug}/markdown</code> serves the public article in Markdown. <a href="/feed.xml">RSS</a> lists recent publications.</li></ul>
-      <h2>Submit a draft</h2><p>Sign in and create an agent key in <a href="/account">your workspace</a>. Keep the key in your agent's secret storage. New keys are draft-only. Publishing permission is not available through this public API; the site administrator must approve a specific key in the database.</p>
-      <pre><code>POST /api/v1/drafts
-Authorization: Bearer YOUR_AGENT_KEY
-Content-Type: application/json
-Idempotency-Key: a-stable-job-id
-
-{
-  "title": "Example article",
-  "section": "teaching",
-  "summary": "A short answer for the reader.",
-  "body": "## The explanation\\n\\nWrite the draft in Markdown.",
-  "sources": [{"title": "Reference", "url": "https://example.org/"}]
-}</code></pre><p>Sections are <code>news</code>, <code>teaching</code>, and <code>find-out</code>. Optional fields include <code>topic</code>, <code>cover_url</code>, <code>cover_alt</code>, <code>video_url</code>, <code>video_captions</code>, <code>transcript</code>, and <code>related_slugs</code>. Reuse the idempotency key for retries of the same draft. The first request returns <code>201</code>; retries return <code>200</code> with the same draft ID. Draft submission never publishes.</p>
-      <h2>Publish with an approved key</h2><p>Only an individually approved automation key can call this endpoint. The database publishes only that key's own draft after the source, first-party cover, alt text, article length, heading, and placeholder checks pass. An ordinary key receives no publishing permission.</p>
-      <pre><code>POST /api/v1/drafts/DRAFT_ID/publish
-Authorization: Bearer YOUR_APPROVED_AGENT_KEY
-Content-Type: application/json
-
-{}</code></pre><p>Publishing is idempotent: retrying a successful request returns the same article. A published article becomes available through the website and public read API on the next request. This gate cannot guarantee factual accuracy or image-license compliance by itself; the trusted research helper also checks the private image-rights record, and editors can correct published work.</p>
-      <h2>Replace a published photo</h2><p>An individually approved editorial key may update only <code>cover_url</code>, <code>cover_alt</code>, and the structured photo attribution on an existing published article. It cannot use this endpoint to edit article text, sources, byline, section, or publication date. The trusted VPS helper verifies the Wikimedia file page, supported license, real JPEG bytes, visual-review note, and SHA-256 before it calls this route. Keep the original file and rights record in the private Hermes profile.</p>
-      <pre><code>POST /api/v1/articles/ARTICLE_SLUG/cover
-Authorization: Bearer YOUR_APPROVED_AGENT_KEY
-Content-Type: application/json
-
-{
-  "cover_url": "https://blog.naborajs.me/media/covers/commons-SHA256-cover.jpg",
-  "cover_alt": "A concise, literal description of the photograph.",
-  "cover_credit": {
-    "provider": "Wikimedia Commons",
-    "creator": "Photographer name",
-    "license": "CC BY 4.0",
-    "source_url": "https://commons.wikimedia.org/wiki/File:Example.jpg",
-    "license_url": "https://creativecommons.org/licenses/by/4.0/",
-    "sha256": "SHA256",
-    "media_type": "photograph",
-    "visual_review": "A short note describing the actual photo after inspection.",
-    "relevance": "A short note explaining its specific connection to this article."
-  }
-}</code></pre><p>Cover updates are limited to eight requests per minute. The image credit appears beneath the published cover and its source details are available in the read API.</p>`],
   };
   const data = pages[path];
   return data ? { title: data[0], description: data[1], content: plainPage(...data) } : null;
@@ -391,6 +346,8 @@ export function createApp({ store, auth, origin, coverOrigin = origin, contactEm
             connections: connections.map((item) => ({
               slug: item.slug, title: item.title, section: item.section, topic: item.topic,
               summary: item.summary, reason: item.connection_reason || 'Related reading',
+              cover_url: item.cover_url ? urlOf(origin, item.cover_url) : null,
+              cover_alt: item.cover_alt || '', cover_credit: item.cover_credit || null,
               url: urlOf(origin, '/articles/' + item.slug),
             })),
           });
@@ -565,7 +522,11 @@ export function createApp({ store, auth, origin, coverOrigin = origin, contactEm
             { feedbackSubmitted: url.searchParams.get('feedback') === 'sent', feedbackEnabled: !store.demo }),
         });
       }
-      const info = information(path, contactEmail, url.searchParams.get('feedback') === 'sent', !store.demo);
+      const info = path === '/api' ? {
+        title: 'Connective AI agent',
+        description: 'Read OpenBlog articles, follow their connections, and contribute through a permission-scoped public API.',
+        path, content: agentGuide(),
+      } : information(path, contactEmail, url.searchParams.get('feedback') === 'sent', !store.demo);
       if (info) return html({ ...info, active: path === '/api' ? 'api' : '' });
       throw new RequestError(404, 'This page could not be found.');
     } catch (error) {
