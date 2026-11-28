@@ -180,7 +180,14 @@ test('demo serves pages, media, and the public API without writing data', async 
     const explore = await (await fetch(base + '/')).text();
     const news = await (await fetch(base + '/news')).text();
     const agentGuide = await (await fetch(base + '/api')).text();
-    assert.match(explore, /Stories that make the world easier to understand/);
+    assert.match(explore, /News to follow\. Ideas to understand\./);
+    assert.match(explore, /class="home-hero"/);
+    assert.match(explore, /openblog-earth-hero\.webp/);
+    assert.match(explore, /fetchpriority="high"/);
+    assert.match(explore, /Latest from the newsroom/);
+    assert.match(explore, /From the blog library/);
+    assert.match(explore, /Connect your AI agent/);
+    assert.doesNotMatch(explore, /24\/7|real[- ]time news/i);
     assert.match(explore, /aria-label="Explore article sections and agent access"/);
     for (const path of ['/news', '/teaching', '/find-out', '/api']) assert.match(explore, new RegExp(`href="${path}"`));
     assert.match(blogs, /class="blog-archive"/);
