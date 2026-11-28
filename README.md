@@ -62,7 +62,7 @@ Publish original articles on the live domain before applying for [AdSense review
 
 Website software is released under the [MIT License](LICENSE). Production article text, photography, and video retain their own rights. Demo copy and demo media ship solely as examples and are excluded from the software license. The website's editorial policy explains public crawling and citation.
 
-The demo hero and four editorial images were generated for OpenBlog and converted to grayscale to match the black-and-white interface. The sample teaching video and captions were also created for this demo. Production articles and their separately licensed media do not ship in this repository.
+The homepage Earth illustration is original conceptual artwork, not a live satellite image. The demo's four editorial images were generated for OpenBlog and converted to grayscale to match the black-and-white interface. The sample teaching video and captions were also created for this demo. Production articles and their separately licensed media do not ship in this repository.
 
 ## Repository workflow
 
