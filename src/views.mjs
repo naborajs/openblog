@@ -43,7 +43,7 @@ export function layout(ctx, { title, description, content, path, image, schema, 
 <meta property="og:type" content="${isArticle ? 'article' : 'website'}">
 <meta property="og:image" content="${e(displayImage)}"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/mark.svg" type="image/svg+xml"><script src="/theme.js"></script>
-<link rel="stylesheet" href="/styles.css?v=newsroom-responsive-20261127"><script defer src="/interactions.js?v=cover-credits-20261126"></script>
+<link rel="stylesheet" href="/styles.css?v=homepage-earth-20261128"><script defer src="/interactions.js?v=cover-credits-20261126"></script>
 ${schema ? `<script type="application/ld+json">${json(schema)}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
@@ -143,26 +143,40 @@ function pager(base, params, pagination) {
 const time = (value, prefix = '') => `<time datetime="${new Date(value).toISOString()}">${prefix ? e(prefix) + ' ' : ''}${e(articleDateTime(value))} IST</time>`;
 const emptyArticles = '<div class="empty"><h2>Articles are on the way</h2><p>Published stories will appear here.</p></div>';
 
+function homeFeatureCard(article, label, className, action) {
+  return `<article class="home-feature-card ${className} reveal"><a href="${href(article.slug)}" class="home-feature-link">
+    ${cover(article, 'home-feature-cover')}<div class="home-feature-copy"><p class="eyebrow">${e(label)}</p>
+      <div class="story-meta">${sectionLabel(article)}${article.topic ? `<span>${e(article.topic)}</span>` : ''}${time(article.published_at, 'Published')}</div>
+      <h2>${e(article.title)}</h2><p>${e(article.summary)}</p><span class="read-label">${e(action)}</span>
+    </div></a>${imageCredit(article.cover_credit)}</article>`;
+}
+
 export function home(blogs, news) {
-  const lead = [...blogs, ...news].find((article) => article.cover_url) ?? blogs[0] ?? news[0];
   const paths = Object.entries(sections).map(([key, section]) => `<a class="path-card reveal ${key === 'news' ? 'path-news' : ''}" href="/${key}">
     <span class="path-symbol" aria-hidden="true">${e(section.symbol)}</span><span class="path-card-copy"><strong>${e(section.title)}</strong><span>${e(section.description)}</span></span>
     <span class="path-arrow" aria-hidden="true">↗</span></a>`).join('');
   const agentPath = `<a class="path-card path-agent reveal" href="/api"><span class="path-symbol" aria-hidden="true">↔</span>
     <span class="path-card-copy"><strong>Connective AI agent</strong><span>Read public articles, follow connections, or contribute a draft through the API.</span></span>
     <span class="path-arrow" aria-hidden="true">↗</span></a>`;
-  const latestBlogs = blogs.filter((article) => article.slug !== lead?.slug).slice(0, 3);
-  const latestNews = news.filter((article) => article.slug !== lead?.slug).slice(0, 3);
+  const latestBlogs = blogs.slice(1, 4);
+  const latestNews = news.slice(1, 4);
   return `<div class="explore-page">
-    <section class="explore-hero" aria-labelledby="explore-title">
-      <div class="explore-hero-copy entrance"><p class="eyebrow">OpenBlog · Explore</p><h1 id="explore-title">Stories that make the world easier to understand.</h1>
-        <p>Follow what is changing, learn how things work, and trace questions through a connected library.</p>
-        <div class="explore-actions"><a class="button primary" href="/blogs">Browse all blogs</a><a class="text-link" href="#discovery-paths">Choose a section <span aria-hidden="true">↓</span></a></div>
+    <section class="home-hero" aria-labelledby="home-title">
+      <div class="home-hero-art" aria-hidden="true"><img src="/media/openblog-earth-hero.webp" width="1600" height="800" alt="" fetchpriority="high" decoding="async"></div>
+      <div class="home-hero-copy entrance"><p class="eyebrow">OpenBlog · News + Blogs</p><h1 id="home-title">News to follow. Ideas to understand.</h1>
+        <p>OpenBlog brings timely reporting, practical blogs, and connected explanations together for curious people and useful agents.</p>
+        <div class="home-hero-actions"><a class="button home-news-button" href="/news">Read latest news</a><a class="button home-blog-button" href="/blogs">Explore blogs</a></div>
+        <a class="home-agent-link" href="/api"><span class="home-agent-icon" aria-hidden="true">↔</span><span><strong>Connect your AI agent</strong><small>Read the public API and connection guide</small></span><span class="home-agent-arrow" aria-hidden="true">↗</span></a>
+        ${news[0] ? `<p class="home-freshness"><span class="home-freshness-mark" aria-hidden="true"></span>${time(news[0].published_at, 'Latest news published')}</p>` : '<p class="home-freshness">The latest news will appear here as it is published.</p>'}
       </div>
-      ${lead ? `<article class="explore-lead reveal"><a href="${href(lead.slug)}" class="explore-lead-link">
-        ${cover(lead, 'explore-lead-cover', true)}<div class="explore-lead-copy"><div class="story-meta">${sectionLabel(lead)}${lead.topic ? `<span>${e(lead.topic)}</span>` : ''}</div>
-          <p class="eyebrow">A place to begin</p><h2>${e(lead.title)}</h2><p>${e(lead.summary)}</p><span class="read-label">Read this story</span></div>
-        </a>${imageCredit(lead.cover_credit)}</article>` : `<div class="explore-lead empty"><h2>Stories are on the way</h2><p>Published articles will appear here, with their cover image when one is available.</p></div>`}
+      <p class="home-art-note">Conceptual artwork · not a live satellite image</p>
+    </section>
+    <section class="home-features" aria-labelledby="home-features-title">
+      <div class="section-head home-features-heading"><div><p class="eyebrow">A place to begin</p><h2 id="home-features-title">Start with a story</h2></div><p>Follow a report or open a guide, then keep exploring through connected reading.</p></div>
+      <div class="home-feature-grid">
+        ${news[0] ? homeFeatureCard(news[0], 'Latest from the newsroom', 'home-feature-news', 'Read the report') : '<article class="home-feature-empty"><h3>News stories are on the way</h3><p>New reports will appear here when they are published.</p><a href="/news">Visit News</a></article>'}
+        ${blogs[0] ? homeFeatureCard(blogs[0], 'From the blog library', 'home-feature-blog', 'Read the article') : '<article class="home-feature-empty"><h3>Blog articles are on the way</h3><p>Guides and explainers will appear here when they are published.</p><a href="/blogs">Visit Blogs</a></article>'}
+      </div>
     </section>
     <section class="explore-paths" id="discovery-paths" aria-labelledby="path-title">
       <div class="section-head"><div><p class="eyebrow">Find your next step</p><h2 id="path-title">Choose a section</h2></div><a href="/api">For AI agents <span aria-hidden="true">↗</span></a></div>
@@ -170,10 +184,10 @@ export function home(blogs, news) {
     </section>
     <div class="explore-editions">
       <section class="explore-edition" aria-labelledby="latest-blogs-title"><div class="section-head"><div><p class="eyebrow">Ideas and explainers</p><h2 id="latest-blogs-title">Latest from Blogs</h2></div><a href="/blogs">View all blogs <span aria-hidden="true">↗</span></a></div>
-        ${latestBlogs.length ? `<div class="story-grid">${latestBlogs.map(card).join('')}</div>` : `<div class="empty"><h3>No blog articles yet</h3><p>Teaching guides and curious questions will appear here.</p></div>`}
+        ${latestBlogs.length ? `<div class="story-grid">${latestBlogs.map(card).join('')}</div>` : `<div class="empty"><h3>No more blog articles yet</h3><p>New guides and explainers will appear here.</p></div>`}
       </section>
       <section class="explore-edition explore-edition-news" aria-labelledby="latest-news-title"><div class="section-head"><div><p class="eyebrow">Reporting and context</p><h2 id="latest-news-title">Latest News</h2></div><a href="/news">View all news <span aria-hidden="true">↗</span></a></div>
-        ${latestNews.length ? `<div class="story-grid">${latestNews.map(card).join('')}</div>` : `<div class="empty"><h3>No news stories yet</h3><p>New reporting will appear here when it is published.</p></div>`}
+        ${latestNews.length ? `<div class="story-grid">${latestNews.map(card).join('')}</div>` : `<div class="empty"><h3>No more news stories yet</h3><p>New reports will appear here when they are published.</p></div>`}
       </section>
     </div>
   </div>`;
