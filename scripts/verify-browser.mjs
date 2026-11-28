@@ -12,7 +12,10 @@ const compactStops = new Set(['home', 'api', 'blogs', 'news', 'search-results', 
 
 try {
   for (const [name, width, height] of [['desktop', 1440, 1000], ['tablet', 820, 1180], ['mobile', 390, 844]]) {
-    const context = await browser.newContext({ viewport: { width, height }, colorScheme: name === 'tablet' ? 'dark' : 'light' });
+      const context = await browser.newContext({
+        viewport: { width, height }, colorScheme: name === 'tablet' ? 'dark' : 'light',
+        hasTouch: name === 'mobile', isMobile: name === 'mobile',
+      });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -21,36 +24,74 @@ try {
       if (name === 'mobile' && !compactStops.has(stop)) return;
       if (name === 'tablet' && !compactStops.has(stop)) return;
       if (name === 'desktop' && !desktopStops.has(stop)) return;
-      await page.screenshot({ path: join(screenshots, `${name}-${stop}.png`), fullPage, animations: 'disabled' });
+        if (fullPage) await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+        const activeTheme = await page.evaluate(() => document.documentElement.dataset.theme ||
+          (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+        await page.screenshot({ path: join(screenshots, `${name}-${stop}-${activeTheme}.png`), fullPage, animations: 'disabled' });
     };
 
     assert.equal((await page.goto(url)).status(), 200);
     await page.locator('h1').waitFor();
-    assert.match(await page.locator('h1').textContent(), /Welcome to OpenBlog/);
+    assert.match(await page.locator('h1').textContent(), /Stories that make the world easier to understand/);
     const header = page.getByRole('banner');
-    assert.deepEqual(await header.locator('.top-links a').allTextContents(), ['Blogs', 'News', 'Connective AI agent']);
+    assert.deepEqual(await header.locator('.top-links a').allTextContents(), ['Explore', 'News', 'Blog', 'Connective AI agent']);
     assert.equal(await page.locator('.sidebar, #explore-menu').count(), 0);
+    assert.equal(await header.locator('.top-links a[aria-current="page"]').textContent(), 'Explore');
+    const sectionPaths = page.getByRole('navigation', { name: 'Explore article sections and agent access' });
+    assert.equal(await sectionPaths.getByRole('link').count(), 4);
+    assert.deepEqual(await sectionPaths.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+      ['/news', '/teaching', '/find-out', '/api']);
     const agent = header.getByRole('link', { name: 'Connective AI agent', exact: true });
     assert(await agent.isVisible());
     assert(await agent.evaluate((link) => {
       const bar = link.closest('.topbar-inner').getBoundingClientRect();
       return link.getBoundingClientRect().right > bar.left + bar.width * .6;
     }));
-    await page.waitForFunction(() => document.querySelector('.explore-title-art img')?.naturalWidth > 0);
-    assert.equal(await page.locator('.explore-title-art img').getAttribute('alt'), '');
-    await page.waitForFunction(() => document.querySelector('.hero-cover img')?.naturalWidth > 0);
-    await page.locator('.hero-cover img').evaluate((img) => img.decode());
+    const leadCover = page.locator('.explore-lead-cover img');
+    if (await leadCover.count()) {
+      await leadCover.evaluate((img) => img.decode());
+      assert(await leadCover.evaluate((img) => img.naturalWidth > 0));
+      assert((await leadCover.getAttribute('alt'))?.length > 0);
+    } else assert(await page.locator('.explore-lead .cover-placeholder').count());
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    await capture('home');
+    await capture('home', true);
 
     await agent.click();
     await page.waitForURL('**/api');
     assert.equal(await agent.getAttribute('aria-current'), 'page');
-    await capture('api');
-    await header.getByRole('link', { name: 'Blogs', exact: true }).click();
+    assert.equal(await page.locator('.agent-guide-section').count(), 4);
+    await page.getByRole('heading', { name: 'Discover connected reading' }).waitFor();
+    await capture('api', true);
+    await header.getByRole('link', { name: 'Blog', exact: true }).click();
     await page.waitForURL('**/blogs');
     await page.locator('.blog-archive').waitFor();
     assert.equal(await page.locator('h1').textContent(), 'Blogs');
+    for (const image of (await page.locator('.blog-archive img').all()).slice(0, 3)) {
+      await image.scrollIntoViewIfNeeded();
+      await image.evaluate((element) => element.decode());
+      assert(await image.evaluate((element) => element.naturalWidth > 0));
+    }
+    const sectionDisclosure = page.locator('.browse-dropdown');
+    const sectionSummary = sectionDisclosure.locator('summary');
+    await sectionSummary.focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await sectionDisclosure.evaluate((details) => details.open), true, 'dropdown should open from the keyboard');
+    assert.deepEqual(await sectionDisclosure.locator('nav a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+      ['/teaching', '/find-out', '/news']);
+    await page.keyboard.press('Enter');
+    assert.equal(await sectionDisclosure.evaluate((details) => details.open), false, 'dropdown should close from the keyboard');
+    if (name === 'desktop') {
+      await sectionSummary.click();
+      assert.equal(await sectionDisclosure.evaluate((details) => details.open), true, 'dropdown should open by mouse');
+      await sectionSummary.click();
+      assert.equal(await sectionDisclosure.evaluate((details) => details.open), false, 'dropdown should close by mouse');
+    }
+    if (name === 'mobile') {
+      await sectionSummary.tap();
+      assert.equal(await sectionDisclosure.evaluate((details) => details.open), true, 'dropdown should open by touch');
+      await sectionSummary.tap();
+      assert.equal(await sectionDisclosure.evaluate((details) => details.open), false, 'dropdown should close by touch');
+    }
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await capture('blogs');
     await page.locator('.top-links').getByRole('link', { name: 'News', exact: true }).click();
@@ -124,6 +165,12 @@ try {
         await page.keyboard.press('Escape');
         await page.getByRole('tooltip').waitFor({ state: 'hidden' });
         const relatedLink = page.locator('.knowledge-map').getByRole('link').first();
+        for (const image of await page.locator('.knowledge-map .connection-cover img').all()) {
+          await image.scrollIntoViewIfNeeded();
+          await image.evaluate((element) => element.decode());
+          assert(await image.evaluate((element) => element.naturalWidth > 0));
+          assert((await image.getAttribute('alt'))?.length > 0);
+        }
         await relatedLink.scrollIntoViewIfNeeded();
         await relatedLink.hover();
         await page.getByRole('tooltip').getByText(/start of a trail/).waitFor();
@@ -154,6 +201,14 @@ try {
     assert.equal(await page.locator('html').getAttribute('data-theme'), nextTheme);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     await capture('article-dark', name === 'desktop');
+    if (name !== 'tablet') {
+      await page.goto(url);
+      await page.locator('.explore-hero').waitFor();
+      await capture('home', true);
+      await page.goto(url + '/api');
+      await page.locator('.agent-guide').waitFor();
+      await capture('api', true);
+    }
     for (const route of ['about', 'policy', 'privacy', 'disclaimer', 'contact']) {
       assert.equal((await page.goto(url + '/' + route)).status(), 200, route);
       await page.locator('h1').waitFor();
@@ -169,7 +224,13 @@ try {
   const page = await context.newPage();
   await page.goto(url);
   assert.equal(await page.locator('html').evaluate((element) => element.classList.contains('motion')), false);
+  assert.equal(await page.locator('.explore-hero-copy').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await page.locator('.explore-lead-cover img').evaluate((element) => getComputedStyle(element).animationName), 'none');
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.goto(url + '/blogs');
+  const reducedDisclosure = page.locator('.browse-dropdown');
+  await reducedDisclosure.locator('summary').click();
+  assert.equal(await reducedDisclosure.locator('.browse-dropdown-panel').evaluate((element) => getComputedStyle(element).animationName), 'none');
   await context.close();
   console.log('Reduced-motion checks passed');
 } finally { await browser.close(); }
