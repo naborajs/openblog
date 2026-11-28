@@ -11,7 +11,7 @@ import { createStore } from './store.mjs';
 import { accountPage, agentGuide, articleView, blogIndex, draftPage, escape, feedbackForm, home, layout, listing, newsIndex, plainPage, registerPage } from './views.mjs';
 
 const publication = 'OpenBlog';
-const description = 'A connected library for news, teaching, and curious questions.';
+const description = 'Follow current news, explore practical blogs, and learn through connected explanations.';
 const basePages = ['', 'blogs', ...Object.keys(sections), 'about', 'policy', 'privacy', 'disclaimer', 'contact', 'api'];
 const staticTypes = {
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -470,7 +470,7 @@ export function createApp({ store, auth, origin, coverOrigin = origin, contactEm
           store.articles({ blogOnly: true, limit: 4 }), store.articles({ section: 'news', limit: 5 }),
         ]);
         return html({
-          title: publication, description, active: 'home', content: home(blogs, news),
+          title: publication, description, active: 'home', content: home(blogs, news), image: '/media/openblog-earth-hero.webp',
           schema: { '@context': 'https://schema.org', '@type': 'WebSite', name: publication, url: origin, description },
         });
       }
